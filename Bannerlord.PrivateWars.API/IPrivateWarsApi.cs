@@ -1,0 +1,63 @@
+using System;
+using System.Collections.Generic;
+using Bannerlord.PrivateWars.Domain.Port;
+
+namespace Bannerlord.PrivateWars.Api;
+
+/// <summary>
+/// The public consumer surface for the private-war mechanism. A host mod supplies the feudal
+/// hierarchy and nameplate colours, queries the set of active wars and clan hostility, and can
+/// declare or resolve wars. All parameters and results are primitives or API DTOs; no internal
+/// domain type crosses this boundary.
+/// </summary>
+public interface IPrivateWarsApi
+{
+    /// <summary>
+    /// Supplies the feudal suzerain link used to resolve war sides by walking up the chain to the
+    /// nearest belligerent principal (call-to-arms). Must be set before wars are queried or resolved.
+    /// </summary>
+    void SetSuzerainProvider(ISuzerainProvider provider);
+
+    /// <summary>
+    /// Configures the nameplate tints applied to private-war enemies and co-belligerent allies.
+    /// Each value is a raw ARGB hex string (AARRGGBB or RRGGBB, optional leading '#'); pass null to
+    /// keep the mechanism's built-in default. The mechanism owns all validation and defaulting.
+    /// </summary>
+    void SetNameplateColors(string? enemyArgbHex, string? allyArgbHex);
+
+    IReadOnlyList<PrivateWarInfo> GetAllWars();
+
+    IReadOnlyList<PrivateWarInfo> GetWarsByClan(string clanId);
+
+    bool AreEnemies(string clanA, string clanB);
+
+    bool AreAllies(string clanA, string clanB);
+
+    /// <summary>
+    /// Declares a new private war. Mirrors the inputs of the internal declare use case:
+    /// the two principal clans, the casus belli (its persisted type discriminator and the contested
+    /// title), the frozen main-goal settlement, the declaration-time fief ownership snapshot used to
+    /// revert captures on resolution, and the campaign day of declaration. Returns the resulting war,
+    /// or null if the declaration was rejected.
+    /// </summary>
+    PrivateWarInfo? DeclareWar(
+        string attackerClanId,
+        string defenderClanId,
+        string casusBelliType,
+        string titleId,
+        string? mainGoalSettlementId,
+        IReadOnlyDictionary<string, string> fiefSnapshot,
+        float startDay);
+
+    /// <summary>
+    /// Resolves an existing private war under the given outcome. Returns the resolved war snapshot,
+    /// or null if no war with that id exists.
+    /// </summary>
+    PrivateWarInfo? ResolveWar(string warId, PrivateWarOutcome outcome);
+
+    event Action<PrivateWarInfo> WarDeclared;
+
+    event Action<PrivateWarInfo> WarResolved;
+
+    event Action HostilityChanged;
+}
