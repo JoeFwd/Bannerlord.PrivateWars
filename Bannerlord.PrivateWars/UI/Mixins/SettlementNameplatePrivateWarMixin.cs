@@ -1,5 +1,4 @@
 using System;
-using System.ComponentModel;
 using Bannerlord.UIExtenderEx.Attributes;
 using Bannerlord.UIExtenderEx.ViewModels;
 using Bannerlord.PrivateWars.Domain;
@@ -22,15 +21,15 @@ namespace Bannerlord.PrivateWars.UI.Mixins
         private const int BannerlordEnemyRelation = 2;
         private const int BannerlordAllianceRelation = 3;
 
-        private readonly PropertyChangedEventHandler _propertyChangedHandler;
+        private readonly PropertyChangedWithIntValueEventHandler _relationChangedHandler;
         private readonly Action _hostilityChangedHandler;
 
         public SettlementNameplatePrivateWarMixin(SettlementNameplateVM vm) : base(vm)
         {
-            _propertyChangedHandler = OnBasePropertyChanged;
+            _relationChangedHandler = OnBaseRelationChanged;
             _hostilityChangedHandler = OnPrivateWarHostilityChanged;
 
-            vm.PropertyChanged += _propertyChangedHandler;
+            vm.PropertyChangedWithIntValue += _relationChangedHandler;
             if (PrivateWarsServices.IsInitialised && PrivateWarsServices.PrivateWarHostility is not null)
             {
                 PrivateWarsServices.PrivateWarHostility.Changed += _hostilityChangedHandler;
@@ -89,7 +88,7 @@ namespace Bannerlord.PrivateWars.UI.Mixins
         {
             if (ViewModel is not null)
             {
-                ViewModel.PropertyChanged -= _propertyChangedHandler;
+                ViewModel.PropertyChangedWithIntValue -= _relationChangedHandler;
             }
 
             if (PrivateWarsServices.IsInitialised && PrivateWarsServices.PrivateWarHostility is not null)
@@ -100,7 +99,9 @@ namespace Bannerlord.PrivateWars.UI.Mixins
             base.OnFinalize();
         }
 
-        private void OnBasePropertyChanged(object? sender, PropertyChangedEventArgs e)
+        // SettlementNameplateVM.Relation is an int, so the base ViewModel raises it through
+        // PropertyChangedWithIntValue only — the plain PropertyChanged event never carries it.
+        private void OnBaseRelationChanged(object? sender, PropertyChangedWithIntValueEventArgs e)
         {
             if (string.IsNullOrEmpty(e.PropertyName)
                 || e.PropertyName == nameof(SettlementNameplateVM.Relation))
