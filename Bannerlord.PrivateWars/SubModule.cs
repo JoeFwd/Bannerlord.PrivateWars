@@ -89,6 +89,11 @@ namespace Bannerlord.PrivateWars
 
             campaignGameStarter.AddBehavior(_serviceProvider.GetRequiredService<PrivateWarCampaignBehavior>());
 
+            // Must follow PrivateWarCampaignBehavior: both listen on OnGameLoadedEvent, and the
+            // claimant sweep needs the war records that behaviour restores there.
+            campaignGameStarter.AddBehavior(new SettlementClaimantDecisionSuppressorCampaignBehavior(
+                _serviceProvider.GetRequiredService<IPrivateWarRepository>()));
+
             // Populate the static locator read by the patches, game models, and nameplate mixins.
             PrivateWarsServices.Initialise(
                 _serviceProvider.GetRequiredService<IPrivateWarRepository>(),
