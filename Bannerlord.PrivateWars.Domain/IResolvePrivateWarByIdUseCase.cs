@@ -1,3 +1,4 @@
+using System;
 using Bannerlord.PrivateWars.Domain.Model;
 
 namespace Bannerlord.PrivateWars.Domain
@@ -11,6 +12,12 @@ namespace Bannerlord.PrivateWars.Domain
     /// </summary>
     public interface IResolvePrivateWarByIdUseCase
     {
+        /// <summary>
+        /// Raised once a war has been concluded, carrying the resolved snapshot and the outcome it
+        /// was resolved under.
+        /// </summary>
+        event Action<PrivateWar, PrivateWarOutcome> WarResolved;
+
         PrivateWar? ResolveWarById(string warId, PrivateWarOutcome outcome);
     }
 }

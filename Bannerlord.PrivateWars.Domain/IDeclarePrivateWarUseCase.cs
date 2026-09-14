@@ -11,6 +11,8 @@ namespace Bannerlord.PrivateWars.Domain
             ICasusBelli casusBelli,
             string? mainGoalSettlementId,
             IReadOnlyDictionary<string, string> fiefSnapshot,
-            float startDay);
+            float startDay,
+            IReadOnlyCollection<string> attackerSupporters,
+            IReadOnlyCollection<string> defenderSupporters);
     }
 }

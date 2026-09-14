@@ -61,7 +61,9 @@ namespace Bannerlord.PrivateWars.Cheats
                 new DebugCasusBelli(),
                 goal.StringId,
                 fiefSnapshot,
-                (float)CampaignTime.Now.ToDays);
+                (float)CampaignTime.Now.ToDays,
+                new string[0],
+                new string[0]);
 
             if (war is null)
                 return "Declaration rejected (landless defender, or an identical active war already exists).";

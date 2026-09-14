@@ -11,15 +11,22 @@ namespace Bannerlord.PrivateWars.Spi
      *  of <c>SaveableField</c> attributes. Mirrors <c>TitleStateSerialiser</c>.
      * </summary>
      * <remarks>
-     *  Line format (12 fields joined with '|'):
-     *  Id|Attacker|Defender|CasusBelliType|TitleId|MainGoalSettlementId|BattleScore|Score|StartDay|Status|OriginalFiefOwners|GoalLastTakenDay
-     *  <para>GoalLastTakenDay is appended last so older 11-field saves still load (it defaults to StartDay).</para>
+     *  Line format (14 fields joined with '|'):
+     *  Id|Attacker|Defender|CasusBelliType|TitleId|MainGoalSettlementId|BattleScore|Score|StartDay|Status|OriginalFiefOwners|GoalLastTakenDay|AttackerSupporters|DefenderSupporters
+     *  <para>
+     *  Fields are only ever appended, so older 11-, 12- and 13-field saves still load: GoalLastTakenDay
+     *  defaults to StartDay and the supporter rosters default to empty.
+     *  </para>
      *  <para>
      *  OriginalFiefOwners is a sub-delimited map: entries separated by ';', settlementId and
      *  ownerClanId separated by ':' (e.g. <c>town_a:clan_1;castle_b:clan_2</c>); empty when no
      *  fiefs were captured. None of '|', ';' or ':' appear in Bannerlord StringIds or the
      *  configuration-defined title ids. Malformed entries are skipped rather than corrupting
      *  the load.
+     *  </para>
+     *  <para>
+     *  AttackerSupporters and DefenderSupporters are ';'-separated clan id lists, empty when a side
+     *  drew no support beyond its own vassal subtree.
      *  </para>
      * </remarks>
      */
@@ -28,6 +35,8 @@ namespace Bannerlord.PrivateWars.Spi
         private const char Delimiter = '|';
         private const char MapEntryDelimiter = ';';
         private const char MapPairDelimiter = ':';
+
+        private static readonly string[] EmptyClanIds = new string[0];
 
         public static List<string> SerialiseWars(IReadOnlyList<PrivateWar> wars)
         {
@@ -47,7 +56,9 @@ namespace Bannerlord.PrivateWars.Spi
                     war.StartDay.ToString("R", CultureInfo.InvariantCulture),
                     war.Status.ToString(),
                     SerialiseFiefOwners(war.OriginalFiefOwners),
-                    war.GoalLastTakenDay.ToString("R", CultureInfo.InvariantCulture)));
+                    war.GoalLastTakenDay.ToString("R", CultureInfo.InvariantCulture),
+                    SerialiseClanIds(war.AttackerSupporters),
+                    SerialiseClanIds(war.DefenderSupporters)));
             }
 
             return serialised;
@@ -61,7 +72,7 @@ namespace Bannerlord.PrivateWars.Spi
                 if (line is null) continue;
 
                 string[] fields = line.Split(Delimiter);
-                if (fields.Length != 11 && fields.Length != 12) continue;
+                if (fields.Length < 11 || fields.Length > 14) continue;
                 if (!TryParseEnum(fields[9], out PrivateWarStatus status)) continue;
                 if (!float.TryParse(fields[6], NumberStyles.Float, CultureInfo.InvariantCulture, out float battleScore)) continue;
                 if (!float.TryParse(fields[7], NumberStyles.Float, CultureInfo.InvariantCulture, out float score)) continue;
@@ -69,7 +80,7 @@ namespace Bannerlord.PrivateWars.Spi
 
                 // Appended field; older saves omit it, so default the fatigue epoch to the war's start day.
                 float goalLastTakenDay = startDay;
-                if (fields.Length == 12
+                if (fields.Length > 11
                     && float.TryParse(fields[11], NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedGoalLastTakenDay))
                 {
                     goalLastTakenDay = parsedGoalLastTakenDay;
@@ -79,6 +90,8 @@ namespace Bannerlord.PrivateWars.Spi
                     fields[0],
                     fields[1],
                     fields[2],
+                    fields.Length > 12 ? DeserialiseClanIds(fields[12]) : EmptyClanIds,
+                    fields.Length > 13 ? DeserialiseClanIds(fields[13]) : EmptyClanIds,
                     fields[3],
                     fields[4],
                     fields[5],
@@ -91,6 +104,16 @@ namespace Bannerlord.PrivateWars.Spi
             }
 
             return wars;
+        }
+
+        private static string SerialiseClanIds(IReadOnlyCollection<string> clanIds)
+        {
+            return string.Join(MapEntryDelimiter.ToString(), clanIds);
+        }
+
+        private static string[] DeserialiseClanIds(string field)
+        {
+            return field.Length == 0 ? EmptyClanIds : field.Split(MapEntryDelimiter);
         }
 
         private static string SerialiseFiefOwners(IReadOnlyDictionary<string, string> fiefOwners)

@@ -176,7 +176,7 @@ public class PrivateWarArmyDecisionAdapterTests
 
     private static PrivateWar War()
         => new(
-            "war", "A", "D", "claim", "title", "goal",
+            "war", "A", "D", Array.Empty<string>(), Array.Empty<string>(), "claim", "title", "goal",
             new Dictionary<string, string>(), 0f, 0f, 0f, 0f,
             PrivateWarStatus.Active);
 }

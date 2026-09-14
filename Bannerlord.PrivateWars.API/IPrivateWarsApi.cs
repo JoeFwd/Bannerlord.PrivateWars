@@ -37,8 +37,9 @@ public interface IPrivateWarsApi
     /// Declares a new private war. Mirrors the inputs of the internal declare use case:
     /// the two principal clans, the casus belli (its persisted type discriminator and the contested
     /// title), the frozen main-goal settlement, the declaration-time fief ownership snapshot used to
-    /// revert captures on resolution, and the campaign day of declaration. Returns the resulting war,
-    /// or null if the declaration was rejected.
+    /// revert captures on resolution, the campaign day of declaration, and the clans that joined
+    /// each side from outside the principals' vassal subtrees. Returns the resulting war, or null if
+    /// the declaration was rejected.
     /// </summary>
     PrivateWarInfo? DeclareWar(
         string attackerClanId,
@@ -47,7 +48,9 @@ public interface IPrivateWarsApi
         string titleId,
         string? mainGoalSettlementId,
         IReadOnlyDictionary<string, string> fiefSnapshot,
-        float startDay);
+        float startDay,
+        IReadOnlyCollection<string> attackerSupporters,
+        IReadOnlyCollection<string> defenderSupporters);
 
     /// <summary>
     /// Resolves an existing private war under the given outcome. Returns the resolved war snapshot,
@@ -57,7 +60,11 @@ public interface IPrivateWarsApi
 
     event Action<PrivateWarInfo> WarDeclared;
 
-    event Action<PrivateWarInfo> WarResolved;
+    /// <summary>
+    /// Raised for every war the mechanism concludes, whether through <see cref="ResolveWar"/> or on
+    /// its own daily tick, carrying the outcome it was resolved under.
+    /// </summary>
+    event Action<PrivateWarInfo, PrivateWarOutcome> WarResolved;
 
     event Action HostilityChanged;
 }

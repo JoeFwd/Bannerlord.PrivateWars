@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using Bannerlord.UIExtenderEx.Attributes;
 using Bannerlord.UIExtenderEx.ViewModels;
 using Bannerlord.PrivateWars.Domain;
@@ -21,15 +22,15 @@ namespace Bannerlord.PrivateWars.UI.Mixins
         private const int BannerlordEnemyRelation = 2;
         private const int BannerlordAllianceRelation = 3;
 
-        private readonly PropertyChangedWithIntValueEventHandler _relationChangedHandler;
+        private readonly PropertyChangedEventHandler _propertyChangedHandler;
         private readonly Action _hostilityChangedHandler;
 
         public SettlementNameplatePrivateWarMixin(SettlementNameplateVM vm) : base(vm)
         {
-            _relationChangedHandler = OnBaseRelationChanged;
+            _propertyChangedHandler = OnBasePropertyChanged;
             _hostilityChangedHandler = OnPrivateWarHostilityChanged;
 
-            vm.PropertyChangedWithIntValue += _relationChangedHandler;
+            vm.PropertyChanged += _propertyChangedHandler;
             if (PrivateWarsServices.IsInitialised && PrivateWarsServices.PrivateWarHostility is not null)
             {
                 PrivateWarsServices.PrivateWarHostility.Changed += _hostilityChangedHandler;
@@ -88,7 +89,7 @@ namespace Bannerlord.PrivateWars.UI.Mixins
         {
             if (ViewModel is not null)
             {
-                ViewModel.PropertyChangedWithIntValue -= _relationChangedHandler;
+                ViewModel.PropertyChanged -= _propertyChangedHandler;
             }
 
             if (PrivateWarsServices.IsInitialised && PrivateWarsServices.PrivateWarHostility is not null)
@@ -99,9 +100,9 @@ namespace Bannerlord.PrivateWars.UI.Mixins
             base.OnFinalize();
         }
 
-        // SettlementNameplateVM.Relation is an int, so the base ViewModel raises it through
-        // PropertyChangedWithIntValue only — the plain PropertyChanged event never carries it.
-        private void OnBaseRelationChanged(object? sender, PropertyChangedWithIntValueEventArgs e)
+        // The base ViewModel raises Relation through the plain PropertyChanged event; the
+        // PropertyChangedWithIntValue overload does not reach this mixin.
+        private void OnBasePropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(e.PropertyName)
                 || e.PropertyName == nameof(SettlementNameplateVM.Relation))

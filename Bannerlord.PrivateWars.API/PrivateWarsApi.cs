@@ -26,9 +26,11 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
     private readonly Func<MutableSuzerainProvider?> _suzerainResolver;
     private readonly Func<MutablePrivateWarNameplateColorProvider?> _nameplateResolver;
 
-    // The hostility signal is created when the SubModule builds its container, after this API is
-    // constructed. Subscribe to it lazily the first time it becomes resolvable so HostilityChanged fires.
+    // The hostility signal and the resolving behaviour are created when the SubModule builds its
+    // container, after this API is constructed. Subscribe lazily the first time each becomes
+    // resolvable so HostilityChanged and WarResolved fire.
     private bool _hostilitySubscribed;
+    private bool _warResolvedSubscribed;
 
     public PrivateWarsApi(
         Func<IPrivateWarRepository?> repositoryResolver,
@@ -59,7 +61,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
 
     public IReadOnlyList<PrivateWarInfo> GetAllWars()
     {
-        EnsureHostilitySubscribed();
+        EnsureSignalsSubscribed();
         var repository = _repositoryResolver();
         if (repository == null)
             return Array.Empty<PrivateWarInfo>();
@@ -69,6 +71,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
 
     public IReadOnlyList<PrivateWarInfo> GetWarsByClan(string clanId)
     {
+        EnsureSignalsSubscribed();
         var repository = _repositoryResolver();
         if (repository == null)
             return Array.Empty<PrivateWarInfo>();
@@ -95,8 +98,11 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         string titleId,
         string? mainGoalSettlementId,
         IReadOnlyDictionary<string, string> fiefSnapshot,
-        float startDay)
+        float startDay,
+        IReadOnlyCollection<string> attackerSupporters,
+        IReadOnlyCollection<string> defenderSupporters)
     {
+        EnsureSignalsSubscribed();
         var declare = _declareResolver();
         if (declare == null)
             return null;
@@ -108,7 +114,9 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
             casusBelli,
             mainGoalSettlementId,
             fiefSnapshot,
-            startDay);
+            startDay,
+            attackerSupporters,
+            defenderSupporters);
 
         if (war == null)
             return null;
@@ -122,37 +130,52 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
     {
         // Resolution needs current fief owners and a side resolver assembled from live campaign state;
         // the campaign behaviour owns that assembly, so route through its resolution seam.
+        EnsureSignalsSubscribed();
         var behavior = _behaviorResolver();
         if (behavior == null)
             return null;
 
         var resolved = behavior.ResolveWarById(warId, Map(outcome));
-        if (resolved == null)
-            return null;
-
-        var info = Map(resolved);
-        WarResolved?.Invoke(info);
-        return info;
+        return resolved == null ? null : Map(resolved);
     }
 
     public event Action<PrivateWarInfo>? WarDeclared;
 
-    public event Action<PrivateWarInfo>? WarResolved;
+    public event Action<PrivateWarInfo, PrivateWarOutcome>? WarResolved;
 
     public event Action? HostilityChanged;
 
-    // Subscribe once to the live hostility signal so HostilityChanged relays it. The signal only
-    // exists after the SubModule builds its container, so this is deferred until it first resolves.
-    private void EnsureHostilitySubscribed()
+    // Subscribe once to each live signal so HostilityChanged and WarResolved relay it. Both only
+    // exist after the SubModule builds its container, so this is deferred until they first resolve.
+    private void EnsureSignalsSubscribed()
     {
-        if (_hostilitySubscribed) return;
+        if (!_hostilitySubscribed)
+        {
+            var hostility = _hostilityResolver();
+            if (hostility != null)
+            {
+                hostility.Changed += () => HostilityChanged?.Invoke();
+                _hostilitySubscribed = true;
+            }
+        }
 
-        var hostility = _hostilityResolver();
-        if (hostility == null) return;
+        if (_warResolvedSubscribed) return;
 
-        hostility.Changed += () => HostilityChanged?.Invoke();
-        _hostilitySubscribed = true;
+        var behavior = _behaviorResolver();
+        if (behavior == null) return;
+
+        behavior.WarResolved += (war, outcome) => WarResolved?.Invoke(Map(war), Map(outcome));
+        _warResolvedSubscribed = true;
     }
+
+    private static PrivateWarOutcome Map(DomainOutcome outcome) =>
+        outcome switch
+        {
+            DomainOutcome.AttackerVictory => PrivateWarOutcome.AttackerVictory,
+            DomainOutcome.DefenderVictory => PrivateWarOutcome.DefenderVictory,
+            DomainOutcome.WhitePeace => PrivateWarOutcome.WhitePeace,
+            _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null)
+        };
 
     private static DomainOutcome Map(PrivateWarOutcome outcome) =>
         outcome switch

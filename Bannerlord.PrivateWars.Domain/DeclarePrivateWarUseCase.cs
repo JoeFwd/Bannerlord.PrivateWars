@@ -27,7 +27,9 @@ namespace Bannerlord.PrivateWars.Domain
             ICasusBelli casusBelli,
             string? mainGoalSettlementId,
             IReadOnlyDictionary<string, string> fiefSnapshot,
-            float startDay)
+            float startDay,
+            IReadOnlyCollection<string> attackerSupporters,
+            IReadOnlyCollection<string> defenderSupporters)
         {
             if (mainGoalSettlementId is null) return null;
 
@@ -42,6 +44,8 @@ namespace Bannerlord.PrivateWars.Domain
                 Id: $"pw_{attackerPrincipalClanId}_{defenderPrincipalClanId}_{Guid.NewGuid():N}",
                 AttackerPrincipalClanId: attackerPrincipalClanId,
                 DefenderPrincipalClanId: defenderPrincipalClanId,
+                AttackerSupporters: attackerSupporters,
+                DefenderSupporters: defenderSupporters,
                 CasusBelliType: casusBelli.Type,
                 TitleId: casusBelli.TitleId,
                 MainGoalSettlementId: mainGoalSettlementId,

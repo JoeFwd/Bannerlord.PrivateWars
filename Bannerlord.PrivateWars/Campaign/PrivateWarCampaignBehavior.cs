@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Bannerlord.PrivateWars.Armies;
@@ -63,6 +64,9 @@ namespace Bannerlord.PrivateWars.Campaign
         private readonly PrivateWarSyntheticCapturePolicy _syntheticCapturePolicy;
 
         private List<string> _serialisedWars = new();
+
+        /// <inheritdoc cref="IResolvePrivateWarByIdUseCase.WarResolved"/>
+        public event Action<PrivateWar, PrivateWarOutcome>? WarResolved;
 
         public PrivateWarCampaignBehavior(
             IPrivateWarRepository privateWars,
@@ -604,11 +608,14 @@ namespace Bannerlord.PrivateWars.Campaign
                 ChangeOwnerOfSettlementAction.ApplyByDefault(hero, settlement);
             }
 
-            _privateWars.Update(war with { Status = PrivateWarStatus.Concluded });
+            var concludedWar = war with { Status = PrivateWarStatus.Concluded };
+            _privateWars.Update(concludedWar);
             ReleaseWarPrisoners(war);
 
             InfoPrinter.Display(
                 $"Private war concluded: {war.AttackerPrincipalClanId} vs {war.DefenderPrincipalClanId} - {outcome}.");
+
+            WarResolved?.Invoke(concludedWar, outcome);
         }
 
         // Which side of this war a clan fights on, walking up its suzerain chain to the nearest principal.
