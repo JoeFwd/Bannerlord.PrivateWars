@@ -38,12 +38,13 @@
 
     <Target Name="Copy module binaries to wEditor" AfterTargets="CopyBinariesWindows"
             Condition="$(BuildForWindows) == 'true' AND $(ModuleId) != '' AND Exists($(GameFolder))">
-        <CreateDirectory Directory="$(GameFolder)/Modules/$(ModuleId)/bin/Win64_Shipping_wEditor" />
+        <CreateDirectory Directory="$(GameFolder)/Modules/$(ModuleId)/bin/Win64_Shipping_wEditor" ContinueOnError="WarnAndContinue" />
 
         <CopyFolder FromDirectory="$(TargetDir)"
                     ToDirectory="$(GameFolder)/Modules/$(ModuleId)/bin/Win64_Shipping_wEditor"
                     Regex="$(PostBuildCopyToModulesRegex)"
-                    Clean="true" />
+                    Clean="true"
+                    ContinueOnError="WarnAndContinue" />
     </Target>
 
 </Project>
