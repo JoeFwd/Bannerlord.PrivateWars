@@ -11,9 +11,8 @@ namespace Bannerlord.PrivateWars.Registry
     /// In-memory store of every private war, doubling as the patch-facing hostility signal.
     /// Mirrors DellarteDellaGuerra's InMemoryLevyRegistry.
     /// <para>
-    /// <c>AreEnemies</c> resolves each clan's side per active war by walking the suzerain chain
-    /// (call-to-arms, design §18.A). This implementation recomputes sides on every call; the
-    /// cached side-set optimisation (design §15 risk #4) is deferred to phase 3.
+    /// Versioned hierarchies cache each clan's side and suzerain, including uninvolved clans.
+    /// Campaign AI workers share this registry, so reads, cache fills and mutations are locked.
     /// </para>
     /// </summary>
     public class InMemoryPrivateWarRegistry : IPrivateWarRepository, IPrivateWarHostility
@@ -21,6 +20,10 @@ namespace Bannerlord.PrivateWars.Registry
         private readonly Dictionary<string, PrivateWar> _warsById = new();
         private readonly WarSideResolver _sideResolver;
         private readonly ISuzerainProvider _hierarchy;
+        private readonly object _sync = new();
+        private readonly Dictionary<(string WarId, string ClanId), WarSide?> _sides = new();
+        private readonly Dictionary<string, string?> _suzerains = new();
+        private long? _hierarchyRevision;
 
         public InMemoryPrivateWarRegistry(WarSideResolver sideResolver, ISuzerainProvider hierarchy)
         {
@@ -31,93 +34,165 @@ namespace Bannerlord.PrivateWars.Registry
         public event Action? Changed;
 
         public PrivateWar? Get(string id)
-            => _warsById.TryGetValue(id, out var war) ? war : null;
+        {
+            lock (_sync) return _warsById.TryGetValue(id, out var war) ? war : null;
+        }
 
         public IReadOnlyList<PrivateWar> GetByPrincipalPair(string attackerPrincipalClanId, string defenderPrincipalClanId)
-            => _warsById.Values
+        {
+            lock (_sync) return _warsById.Values
                 .Where(w => w.AttackerPrincipalClanId == attackerPrincipalClanId
                             && w.DefenderPrincipalClanId == defenderPrincipalClanId)
                 .ToList();
+        }
 
         public IReadOnlyList<PrivateWar> GetByDefender(string defenderPrincipalClanId)
-            => _warsById.Values.Where(w => w.DefenderPrincipalClanId == defenderPrincipalClanId).ToList();
+        {
+            lock (_sync) return _warsById.Values.Where(w => w.DefenderPrincipalClanId == defenderPrincipalClanId).ToList();
+        }
 
         public IReadOnlyList<PrivateWar> GetByTitle(string titleId)
-            => _warsById.Values.Where(w => w.TitleId == titleId).ToList();
+        {
+            lock (_sync) return _warsById.Values.Where(w => w.TitleId == titleId).ToList();
+        }
 
         public IReadOnlyList<PrivateWar> GetByClan(string principalClanId)
-            => _warsById.Values
+        {
+            lock (_sync) return _warsById.Values
                 .Where(w => w.AttackerPrincipalClanId == principalClanId
                             || w.DefenderPrincipalClanId == principalClanId)
                 .ToList();
+        }
 
-        public IReadOnlyList<PrivateWar> GetAll() => _warsById.Values.ToList();
+        public IReadOnlyList<PrivateWar> GetAll()
+        {
+            lock (_sync) return _warsById.Values.ToList();
+        }
 
         public void Add(PrivateWar war)
         {
-            _warsById[war.Id] = war;
+            lock (_sync)
+            {
+                _warsById[war.Id] = war;
+                _sides.Clear();
+            }
             Changed?.Invoke();
         }
 
         public void Update(PrivateWar war)
         {
-            _warsById[war.Id] = war;
+            lock (_sync)
+            {
+                _warsById[war.Id] = war;
+                _sides.Clear();
+            }
             Changed?.Invoke();
         }
 
         public void Remove(string id)
         {
-            _warsById.Remove(id);
+            lock (_sync)
+            {
+                _warsById.Remove(id);
+                _sides.Clear();
+            }
             Changed?.Invoke();
         }
 
         public void Initialise(IEnumerable<PrivateWar> wars)
         {
-            _warsById.Clear();
-            foreach (var war in wars)
-                _warsById[war.Id] = war;
+            lock (_sync)
+            {
+                _warsById.Clear();
+                foreach (var war in wars)
+                    _warsById[war.Id] = war;
+                _sides.Clear();
+                _suzerains.Clear();
+                _hierarchyRevision = null;
+            }
 
             Changed?.Invoke();
         }
 
-        public IReadOnlyList<PrivateWar> Snapshot() => _warsById.Values.ToList();
+        public IReadOnlyList<PrivateWar> Snapshot() => GetAll();
 
         public bool AreEnemies(string clanIdA, string clanIdB)
         {
-            foreach (var war in _warsById.Values)
+            if (clanIdA == clanIdB) return false;
+            lock (_sync)
             {
-                if (war.Status != PrivateWarStatus.Active) continue;
+                bool cache = RefreshHierarchy();
+                foreach (var war in _warsById.Values)
+                {
+                    if (war.Status != PrivateWarStatus.Active) continue;
 
-                var sideA = _sideResolver.ResolveSide(clanIdA, war, _hierarchy.GetSuzerain);
-                if (sideA is null) continue;
+                    var sideA = ResolveSide(clanIdA, war, cache);
+                    if (sideA is null) continue;
 
-                var sideB = _sideResolver.ResolveSide(clanIdB, war, _hierarchy.GetSuzerain);
-                if (sideB is null) continue;
+                    var sideB = ResolveSide(clanIdB, war, cache);
+                    if (sideB is null) continue;
 
-                if (sideA != sideB) return true;
+                    if (sideA != sideB) return true;
+                }
+                return false;
             }
-
-            return false;
         }
 
         public bool AreAllies(string clanIdA, string clanIdB)
         {
             if (clanIdA == clanIdB) return false;
 
-            foreach (var war in _warsById.Values)
+            lock (_sync)
             {
-                if (war.Status != PrivateWarStatus.Active) continue;
+                bool cache = RefreshHierarchy();
+                foreach (var war in _warsById.Values)
+                {
+                    if (war.Status != PrivateWarStatus.Active) continue;
 
-                var sideA = _sideResolver.ResolveSide(clanIdA, war, _hierarchy.GetSuzerain);
-                if (sideA is null) continue;
+                    var sideA = ResolveSide(clanIdA, war, cache);
+                    if (sideA is null) continue;
 
-                var sideB = _sideResolver.ResolveSide(clanIdB, war, _hierarchy.GetSuzerain);
-                if (sideB is null) continue;
+                    var sideB = ResolveSide(clanIdB, war, cache);
+                    if (sideB is null) continue;
 
-                if (sideA == sideB) return true;
+                    if (sideA == sideB) return true;
+                }
+                return false;
             }
+        }
 
-            return false;
+        private bool RefreshHierarchy()
+        {
+            var revision = (_hierarchy as IVersionedSuzerainProvider)?.Revision;
+            if (revision != _hierarchyRevision)
+            {
+                _sides.Clear();
+                _suzerains.Clear();
+                _hierarchyRevision = revision;
+            }
+            return revision.HasValue;
+        }
+
+        private WarSide? ResolveSide(string clanId, PrivateWar war, bool cache)
+        {
+            if (!cache) return _sideResolver.ResolveSide(clanId, war, _hierarchy.GetSuzerain);
+            var key = (war.Id, clanId);
+            if (!_sides.TryGetValue(key, out var side))
+            {
+                side = _sideResolver.ResolveSide(clanId, war, GetCachedSuzerain);
+                _sides[key] = side;
+            }
+            return side;
+        }
+
+        private string? GetCachedSuzerain(string clanId)
+        {
+            if (!_suzerains.TryGetValue(clanId, out var suzerain))
+            {
+                suzerain = _hierarchy.GetSuzerain(clanId);
+                _suzerains[clanId] = suzerain;
+            }
+            return suzerain;
         }
     }
 }
