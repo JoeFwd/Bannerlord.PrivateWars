@@ -47,6 +47,7 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<InMemoryPrivateWarRegistry>();
             services.AddSingleton<IPrivateWarRepository>(sp => sp.GetRequiredService<InMemoryPrivateWarRegistry>());
             services.AddSingleton<IPrivateWarHostility>(sp => sp.GetRequiredService<InMemoryPrivateWarRegistry>());
+            services.AddSingleton<IPrivateWarSidesProvider>(sp => sp.GetRequiredService<InMemoryPrivateWarRegistry>());
 
             // Domain use cases
             services.AddSingleton<IDeclarePrivateWarUseCase, DeclarePrivateWarUseCase>();

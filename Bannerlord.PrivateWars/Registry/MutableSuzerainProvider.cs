@@ -1,3 +1,4 @@
+using System;
 using Bannerlord.PrivateWars.Domain.Port;
 
 namespace Bannerlord.PrivateWars.Registry
@@ -7,41 +8,21 @@ namespace Bannerlord.PrivateWars.Registry
     // IPrivateWarsApi.SetSuzerainProvider). This indirection lets that late-bound provider reach the
     // already-built singletons: it delegates to an inner provider, defaulting to a null-returning one
     // so side resolution falls back to principal clans only until a host sets the real hierarchy.
-    public class MutableSuzerainProvider : IVersionedSuzerainProvider
+    public class MutableSuzerainProvider : IReplaceableSuzerainProvider
     {
-        private readonly object _sync = new();
-        private ISuzerainProvider _inner = new NullSuzerainProvider();
-        private long _revision;
-        private long? _innerRevision;
+        private volatile ISuzerainProvider _inner = new NullSuzerainProvider();
 
-        public long? Revision
-        {
-            get
-            {
-                lock (_sync)
-                {
-                    var revision = (_inner as IVersionedSuzerainProvider)?.Revision;
-                    if (revision is null) return null;
-                    if (_innerRevision != revision)
-                    {
-                        _innerRevision = revision;
-                        _revision++;
-                    }
-                    return _revision;
-                }
-            }
-        }
+        // Each new campaign sets a fresh provider whose revision may equal the previous one's.
+        public event Action? ProviderChanged;
+
+        public long? Revision => (_inner as IVersionedSuzerainProvider)?.Revision;
 
         public string? GetSuzerain(string clanId) => _inner.GetSuzerain(clanId);
 
         public void SetProvider(ISuzerainProvider provider)
         {
-            lock (_sync)
-            {
-                _inner = provider;
-                _innerRevision = null;
-                _revision++;
-            }
+            _inner = provider;
+            ProviderChanged?.Invoke();
         }
 
         private sealed class NullSuzerainProvider : ISuzerainProvider

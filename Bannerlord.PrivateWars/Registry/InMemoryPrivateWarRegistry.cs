@@ -15,7 +15,7 @@ namespace Bannerlord.PrivateWars.Registry
     /// Campaign AI workers share this registry, so reads, cache fills and mutations are locked.
     /// </para>
     /// </summary>
-    public class InMemoryPrivateWarRegistry : IPrivateWarRepository, IPrivateWarHostility
+    public class InMemoryPrivateWarRegistry : IPrivateWarRepository, IPrivateWarHostility, IPrivateWarSidesProvider
     {
         private readonly Dictionary<string, PrivateWar> _warsById = new();
         private readonly WarSideResolver _sideResolver;
@@ -29,6 +29,16 @@ namespace Bannerlord.PrivateWars.Registry
         {
             _sideResolver = sideResolver;
             _hierarchy = hierarchy;
+            if (hierarchy is IReplaceableSuzerainProvider replaceable)
+                replaceable.ProviderChanged += () =>
+                {
+                    lock (_sync)
+                    {
+                        _sides.Clear();
+                        _suzerains.Clear();
+                        _hierarchyRevision = null;
+                    }
+                };
         }
 
         public event Action? Changed;
@@ -159,6 +169,27 @@ namespace Bannerlord.PrivateWars.Registry
                 }
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Which side of the war a clan fights on, from the shared side cache. A war instance this
+        /// registry does not currently store (a record about to be updated, or one just removed) is
+        /// resolved fresh, still through the cached suzerain chain.
+        /// </summary>
+        public WarSide? ResolveSide(string clanId, PrivateWar war)
+        {
+            lock (_sync)
+            {
+                bool cache = RefreshHierarchy();
+                if (_warsById.TryGetValue(war.Id, out var stored) && ReferenceEquals(stored, war))
+                    return ResolveSide(clanId, war, cache);
+                return _sideResolver.ResolveSide(clanId, war, cache ? GetCachedSuzerain : _hierarchy.GetSuzerain);
+            }
+        }
+
+        public string? GetSuzerain(string clanId)
+        {
+            lock (_sync) return RefreshHierarchy() ? GetCachedSuzerain(clanId) : _hierarchy.GetSuzerain(clanId);
         }
 
         private bool RefreshHierarchy()

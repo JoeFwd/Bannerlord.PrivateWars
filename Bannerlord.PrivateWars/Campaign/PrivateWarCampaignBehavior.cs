@@ -58,8 +58,7 @@ namespace Bannerlord.PrivateWars.Campaign
         private readonly ITickPrivateWarUseCase _tickPrivateWar;
         private readonly IResolvePrivateWarUseCase _resolvePrivateWar;
         private readonly IApplyBattleOutcomeUseCase _applyBattleOutcome;
-        private readonly WarSideResolver _sideResolver;
-        private readonly ISuzerainProvider _hierarchy;
+        private readonly IPrivateWarSidesProvider _sides;
         private readonly PrivateWarArmyDecisionAdapter _armyDecisionAdapter;
         private readonly PrivateWarSyntheticCapturePolicy _syntheticCapturePolicy;
 
@@ -73,8 +72,7 @@ namespace Bannerlord.PrivateWars.Campaign
             ITickPrivateWarUseCase tickPrivateWar,
             IResolvePrivateWarUseCase resolvePrivateWar,
             IApplyBattleOutcomeUseCase applyBattleOutcome,
-            WarSideResolver sideResolver,
-            ISuzerainProvider hierarchy,
+            IPrivateWarSidesProvider sides,
             PrivateWarArmyDecisionAdapter armyDecisionAdapter,
             PrivateWarSyntheticCapturePolicy syntheticCapturePolicy)
         {
@@ -82,8 +80,7 @@ namespace Bannerlord.PrivateWars.Campaign
             _tickPrivateWar = tickPrivateWar;
             _resolvePrivateWar = resolvePrivateWar;
             _applyBattleOutcome = applyBattleOutcome;
-            _sideResolver = sideResolver;
-            _hierarchy = hierarchy;
+            _sides = sides;
             _armyDecisionAdapter = armyDecisionAdapter;
             _syntheticCapturePolicy = syntheticCapturePolicy;
         }
@@ -233,7 +230,7 @@ namespace Bannerlord.PrivateWars.Campaign
                 leaderParty.StringId,
                 candidates,
                 assignments,
-                _hierarchy.GetSuzerain,
+                _sides.GetSuzerain,
                 kingdom.Settlements.Count > 0,
                 maximumMemberCount);
             if (plan is null) return null;
@@ -620,7 +617,7 @@ namespace Bannerlord.PrivateWars.Campaign
 
         // Which side of this war a clan fights on, walking up its suzerain chain to the nearest principal.
         private WarSide? ResolveSide(string clanId, PrivateWar war)
-            => _sideResolver.ResolveSide(clanId, war, _hierarchy.GetSuzerain);
+            => _sides.ResolveSide(clanId, war);
 
         // Release every captive this war put behind bars now that it has concluded. During the war
         // PrivateWarPrisonerRetentionPatch deliberately blocks the engine's involuntary auto-release of
