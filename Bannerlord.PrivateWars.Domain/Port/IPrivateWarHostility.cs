@@ -25,5 +25,10 @@ namespace Bannerlord.PrivateWars.Domain.Port
         /// own ally. Same O(1) hot-path contract as <see cref="AreEnemies"/>.
         /// </summary>
         bool AreAllies(string clanIdA, string clanIdB);
+
+        /// <summary>
+        /// True when the clan sits on either side of some active private war.
+        /// </summary>
+        bool IsBelligerent(string clanId);
     }
 }

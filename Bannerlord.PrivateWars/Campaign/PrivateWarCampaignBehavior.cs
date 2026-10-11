@@ -17,6 +17,7 @@ using TaleWorlds.CampaignSystem.Settlements;
 using TaleWorlds.Core;
 using TaleWorlds.Library;
 using Helpers;
+using Microsoft.Extensions.Logging;
 
 namespace Bannerlord.PrivateWars.Campaign
 {
@@ -24,8 +25,8 @@ namespace Bannerlord.PrivateWars.Campaign
      * <summary>
      *  Owns the registry lifecycle and the war's prosecution drive. Persists active and concluded
      *  wars through Bannerlord saves and restores them on load; and, because the engine never plans
-     *  a same-kingdom siege on its own (design §5, risk #1), injects the war goal as a scored besiege
-     *  candidate into each attacker party's AI think so it competes in the engine's normal behaviour
+     *  a same-kingdom siege on its own (design §5, risk #1), injects the war goal as a strength-gated
+     *  besiege candidate into the side leader's AI think so it competes in the engine's normal behaviour
      *  vote — losing, by design, to higher priorities such as defending the clan's own threatened
      *  fief. The retention model keeps an in-progress siege sticky. Each day it also advances every
      *  active war's score from current world state and, once a side crosses ±100, resolves it:
@@ -39,10 +40,8 @@ namespace Bannerlord.PrivateWars.Campaign
         // AiPartyThinkBehavior applies the maximum-scoring candidate, so this must beat ordinary /
         // opportunistic attacks (~3-15) yet stay below an active defence of the clan's own fief
         // (~15-30; defence's base factor is 1.28 vs a siege's 0.8) so defending one's title wins.
-        // It also competes with AiArmyMemberBehavior's escort-the-leader score (10 min - 20 max) for an
-        // attached member, so at 12f the besieger stays in a healthy army (escort ~20 wins) and only
-        // quits to prosecute when escorting is weak — keeping the quit a scored decision, not a forced one.
-        // Flat tuning value — revisit via AI-vs-AI playtest.
+        // Only the side's designated leader bids, scaled by PrivateWarSiegeStrengthPolicy (x0.5-1).
+        // Tuning value — revisit via AI-vs-AI playtest.
         private const float PrivateWarSiegeSelectionScore = 12f;
 
         // Once a private-war besieger has established its camp on the goal, this dominant score keeps it
@@ -61,8 +60,17 @@ namespace Bannerlord.PrivateWars.Campaign
         private readonly IPrivateWarSidesProvider _sides;
         private readonly PrivateWarArmyDecisionAdapter _armyDecisionAdapter;
         private readonly PrivateWarSyntheticCapturePolicy _syntheticCapturePolicy;
+        private readonly PrivateWarSiegeStrengthPolicy _siegeStrengthPolicy;
+        private readonly PrivateWarSideLeaderSelector _sideLeaderSelector;
+        private readonly ILogger<PrivateWarCampaignBehavior> _logger;
 
         private List<string> _serialisedWars = new();
+
+        // Party that raised each war side's goal army, keyed by war id and side. A gathering Besieger
+        // army points AiBehaviorObject at a gathering fortress, never the goal, so without this its
+        // leader lost the designation the moment it formed and the next lord raised another army.
+        // Not persisted: after a load, an army is recognised again once it marches on the goal.
+        private readonly Dictionary<(string WarId, WarSide Side), string> _goalArmyLeaders = new();
 
         /// <inheritdoc cref="IResolvePrivateWarByIdUseCase.WarResolved"/>
         public event Action<PrivateWar, PrivateWarOutcome>? WarResolved;
@@ -74,8 +82,14 @@ namespace Bannerlord.PrivateWars.Campaign
             IApplyBattleOutcomeUseCase applyBattleOutcome,
             IPrivateWarSidesProvider sides,
             PrivateWarArmyDecisionAdapter armyDecisionAdapter,
-            PrivateWarSyntheticCapturePolicy syntheticCapturePolicy)
+            PrivateWarSyntheticCapturePolicy syntheticCapturePolicy,
+            PrivateWarSiegeStrengthPolicy siegeStrengthPolicy,
+            PrivateWarSideLeaderSelector sideLeaderSelector,
+            ILogger<PrivateWarCampaignBehavior> logger)
         {
+            _logger = logger;
+            _siegeStrengthPolicy = siegeStrengthPolicy;
+            _sideLeaderSelector = sideLeaderSelector;
             _privateWars = privateWars;
             _tickPrivateWar = tickPrivateWar;
             _resolvePrivateWar = resolvePrivateWar;
@@ -93,6 +107,7 @@ namespace Bannerlord.PrivateWars.Campaign
             CampaignEvents.DailyTickEvent.AddNonSerializedListener(this, OnDailyTick);
             CampaignEvents.MapEventEnded.AddNonSerializedListener(this, OnMapEventEnded);
             CampaignEvents.OnClanChangedKingdomEvent.AddNonSerializedListener(this, OnClanChangedKingdom);
+            CampaignEvents.OnSettlementOwnerChangedEvent.AddNonSerializedListener(this, OnSettlementOwnerChanged);
         }
 
         public override void SyncData(IDataStore dataStore)
@@ -117,25 +132,161 @@ namespace Bannerlord.PrivateWars.Campaign
         // each attacker principal's eligible party, inject the goal as a scored besiege candidate; it
         // then flows through the engine's own max-score selection in AiPartyThinkBehavior, so a
         // higher-priority objective (notably defending the clan's own besieged fief) naturally wins.
+        // Only the side's designated leader bids (principal, else the most senior vassal); the rest of
+        // the side joins its army when called instead of trickling in alone. Like vanilla's
+        // AiMilitaryBehavior, the leader bids twice — once as a gathered army, once with its current
+        // strength — and each bid is strength-gated against the walled defence, so an outnumbered
+        // party gathers an army or stays home rather than besieging alone.
         private void OnAiHourlyTick(MobileParty mobileParty, PartyThinkParams p)
         {
-            var objective = FindPrivateWarGoalFor(mobileParty);
-            if (objective is null) return;
+            VetoSameKingdomSiegeRelief(mobileParty, p);
 
-            var armyMembers = GetPrivateWarArmyMembers(mobileParty, objective);
+            var objective = FindPrivateWarGoalFor(mobileParty);
+            if (objective is null || !IsDesignatedSideLeader(mobileParty, objective)) return;
+
+            float defence = EstimateGoalDefence(objective);
+            int wallLevel = objective.Goal.Town?.GetWallLevel() ?? 0;
+
+            if (mobileParty.Army == null)
+            {
+                var armyMembers = GetPrivateWarArmyMembers(mobileParty, objective);
+                if (armyMembers != null)
+                {
+                    float armyStrength = mobileParty.GetTotalLandStrengthWithFollowers()
+                                         + armyMembers.Sum(member => member.Party.GetCustomStrength(
+                                             BattleSideEnum.Attacker, MapEvent.PowerCalculationContext.Siege));
+                    AddSiegeBid(p, objective.Goal, willGatherArmy: true, PrivateWarSiegeSelectionScore
+                        * _siegeStrengthPolicy.GetScoreFactor(armyStrength, defence, wallLevel, isHoldingSiege: false));
+                }
+            }
 
             // While en route, use the low selection score so a higher-priority objective (notably
             // defending the clan's own besieged fief) still wins. Once the party has actually established
             // the siege on the goal, switch to the dominant hold score so the engine's periodic re-think
-            // does not abandon the camp before preparations complete.
-            float score = mobileParty.BesiegedSettlement == objective.Goal
-                ? PrivateWarSiegeHoldScore
-                : PrivateWarSiegeSelectionScore;
+            // does not abandon the camp before preparations complete — unless relief has made the siege
+            // unwinnable, in which case the gate drops the bid and the camp is abandoned.
+            bool isHoldingSiege = mobileParty.BesiegedSettlement == objective.Goal;
+            float ourStrength = isHoldingSiege && mobileParty.BesiegerCamp != null
+                ? mobileParty.BesiegerCamp.GetInvolvedPartiesForEventType().Sum(party => party.EstimatedStrength)
+                : mobileParty.GetTotalLandStrengthWithFollowers();
+            float baseScore = isHoldingSiege ? PrivateWarSiegeHoldScore : PrivateWarSiegeSelectionScore;
+            AddSiegeBid(p, objective.Goal, willGatherArmy: false, baseScore
+                * _siegeStrengthPolicy.GetScoreFactor(ourStrength, defence, wallLevel, isHoldingSiege));
+        }
+
+        // Vanilla's defender scoring treats any besieged settlement of the party's own kingdom as one to
+        // relieve, so a private-war siege drew the whole kingdom - the besieger's own side included - into
+        // DefendSettlement on it (observed: every attacker-side party "defending" its own siege of
+        // Kenilworth). A same-kingdom siege is a feud, so only the besieger's private-war opponents relieve it.
+        private void VetoSameKingdomSiegeRelief(MobileParty mobileParty, PartyThinkParams p)
+        {
+            var clan = mobileParty.ActualClan;
+            if (clan is null) return;
+
+            List<AIBehaviorData>? vetoed = null;
+            foreach (var (behaviour, score) in p.AIBehaviorScores)
+            {
+                if (behaviour.AiBehavior != AiBehavior.DefendSettlement || score <= 0f) continue;
+                if (behaviour.Party is not Settlement settlement) continue;
+
+                var besieger = settlement.SiegeEvent?.BesiegerCamp?.LeaderParty;
+                var besiegerClan = besieger?.ActualClan;
+                if (besiegerClan is null || besieger!.MapFaction != mobileParty.MapFaction) continue;
+                if (IsPrivateWarOpponent(clan.StringId, besiegerClan.StringId)) continue;
+
+                (vetoed ??= new List<AIBehaviorData>()).Add(behaviour);
+            }
+
+            if (vetoed is null) return;
+            foreach (var behaviour in vetoed)
+                p.SetBehaviorScore(behaviour, 0f);
+        }
+
+        private bool IsPrivateWarOpponent(string clanId, string otherClanId)
+            => _privateWars.Snapshot().Any(war =>
+            {
+                if (war.Status != PrivateWarStatus.Active) return false;
+                var side = ResolveSide(clanId, war);
+                var otherSide = ResolveSide(otherClanId, war);
+                return side is not null && otherSide is not null && side != otherSide;
+            });
+
+        private static void AddSiegeBid(PartyThinkParams p, Settlement goal, bool willGatherArmy, float score)
+        {
+            if (score <= 0f) return;
 
             var behaviour = new AIBehaviorData(
-                objective.Goal, AiBehavior.BesiegeSettlement, MobileParty.NavigationType.Default,
-                willGatherArmy: armyMembers != null, isFromPort: false, isTargetingPort: false);
+                goal, AiBehavior.BesiegeSettlement, MobileParty.NavigationType.Default,
+                willGatherArmy, isFromPort: false, isTargetingPort: false);
             p.AddBehaviorScore((behaviour, score));
+        }
+
+        private bool IsDesignatedSideLeader(MobileParty mobileParty, PrivateWarGoal objective)
+        {
+            if (mobileParty.MapFaction is not Kingdom kingdom) return false;
+
+            var candidates = new List<PrivateWarLeaderCandidate>();
+            foreach (WarPartyComponent component in kingdom.WarPartyComponents)
+            {
+                var party = component.MobileParty;
+                var clan = party.ActualClan;
+                if (clan is null || !party.IsActive || party.IsMainParty || clan == Clan.PlayerClan) continue;
+                if (ResolveSide(clan.StringId, objective.War) != objective.Side) continue;
+
+                // Only a besieging army counts: an army *defending* the goal also has it as its behaviour
+                // object, and ranking it first stole the lead (and the hold bid) from the real besieger.
+                bool isBesiegingGoal = party.BesiegedSettlement == objective.Goal
+                                       && party.BesiegerCamp?.LeaderParty == party;
+                bool isLeadingGoalArmy = party.Army?.LeaderParty == party
+                                         && party.Army.ArmyType == Army.ArmyTypes.Besieger
+                                         && (party.Army.AiBehaviorObject == objective.Goal
+                                             || _goalArmyLeaders.TryGetValue((objective.War.Id, objective.Side), out var raisedBy)
+                                             && raisedBy == party.StringId);
+                if (!isBesiegingGoal && !isLeadingGoalArmy && !CanLeadPrivateWarArmy(party)) continue;
+
+                candidates.Add(new PrivateWarLeaderCandidate(
+                    party.StringId, clan.StringId, clan.Tier, clan.Renown, isLeadingGoalArmy, isBesiegingGoal));
+            }
+
+            var principalClanId = objective.Side == WarSide.Attacker
+                ? objective.War.AttackerPrincipalClanId
+                : objective.War.DefenderPrincipalClanId;
+            return _sideLeaderSelector.Select(candidates, principalClanId) == mobileParty.StringId;
+        }
+
+        // Walled-defence input for the strength gate: the garrison, militia and enemy-side lords inside
+        // the goal, plus enemy-side lords within half a day's march who would come to its relief. Sides
+        // are resolved through the feud, not MapFaction (both sides share a kingdom).
+        private float EstimateGoalDefence(PrivateWarGoal objective)
+        {
+            var goal = objective.Goal;
+            float defence = 0f;
+            foreach (var party in goal.Parties)
+            {
+                if (party.IsGarrison || party.IsMilitia || IsOnOpposingSide(party, objective))
+                    defence += party.Party.EstimatedStrength;
+            }
+
+            float reliefRadius = TaleWorlds.CampaignSystem.Campaign.Current.EstimatedAverageLordPartySpeed
+                                 * CampaignTime.HoursInDay * 0.5f;
+            var search = MobileParty.StartFindingLocatablesAroundPosition(goal.GatePosition.ToVec2(), reliefRadius);
+            for (var party = MobileParty.FindNextLocatable(ref search); party != null; party = MobileParty.FindNextLocatable(ref search))
+            {
+                if (party.CurrentSettlement != goal && party.IsLordParty && party.AttachedTo == null
+                    && IsOnOpposingSide(party, objective))
+                {
+                    defence += party.GetTotalLandStrengthWithFollowers(includeNonAttachedArmyMembers: false);
+                }
+            }
+
+            return defence;
+        }
+
+        private bool IsOnOpposingSide(MobileParty party, PrivateWarGoal objective)
+        {
+            var clan = party.ActualClan;
+            var side = clan is null ? null : ResolveSide(clan.StringId, objective.War);
+            return side is not null && side != objective.Side;
         }
 
         private MBList<MobileParty>? GetPrivateWarArmyMembers(
@@ -231,7 +382,6 @@ namespace Bannerlord.PrivateWars.Campaign
                 candidates,
                 assignments,
                 _sides.GetSuzerain,
-                kingdom.Settlements.Count > 0,
                 maximumMemberCount);
             if (plan is null) return null;
 
@@ -256,7 +406,9 @@ namespace Bannerlord.PrivateWars.Campaign
                 objective != null,
                 leaderParty?.StringId ?? string.Empty,
                 targetSettlement?.StringId ?? string.Empty,
-                objective is null ? string.Empty : leaderParty!.StringId,
+                objective != null && IsDesignatedSideLeader(leaderParty!, objective)
+                    ? leaderParty!.StringId
+                    : string.Empty,
                 objective?.War.MainGoalSettlementId ?? string.Empty,
                 () =>
                 {
@@ -265,7 +417,14 @@ namespace Bannerlord.PrivateWars.Campaign
                 });
 
             if (decision.Action == PrivateWarArmyCreationAction.ReplaceMembers)
+            {
                 replacementMembers = freshMembers;
+                _goalArmyLeaders[(objective!.War.Id, objective.Side)] = leaderParty!.StringId;
+            }
+            if (decision.Action != PrivateWarArmyCreationAction.ContinueOriginal)
+                _logger.LogDebug("[PW] {War} army creation {Action}: leader={Leader} target={Target} members=[{Members}]",
+                    objective?.War.Id, decision.Action, leaderParty?.StringId, targetSettlement?.StringId,
+                    string.Join(",", decision.MemberPartyIds));
 
             return decision.Action;
         }
@@ -329,14 +488,126 @@ namespace Bannerlord.PrivateWars.Campaign
             {
                 if (war.Status != PrivateWarStatus.Active) continue;
 
+                ReleaseBelligerentsFromForeignArmies(war);
                 var observations = BuildObservations(war);
                 var result = _tickPrivateWar.Execute(war, observations, currentDay);
                 var scored = war with { Score = result.Score };
+                LogWarDiagnosis(scored, observations);
 
                 if (result.Outcome is { } outcome)
                     ResolveWar(scored, outcome);
                 else
                     _privateWars.Update(scored);
+            }
+        }
+
+        // Daily trace of why a war is or is not being prosecuted: score inputs, who holds the goal, and for
+        // the side that should besiege it, every party's eligibility, the designated leader, its army plan
+        // and the strength-gate factors that feed the AI bid.
+        private void LogWarDiagnosis(PrivateWar war, PrivateWarObservations obs)
+        {
+            if (!_logger.IsEnabled(LogLevel.Debug)) return;
+
+            var goal = war.MainGoalSettlementId is null ? null : Settlement.Find(war.MainGoalSettlementId);
+            var ownerSide = goal?.OwnerClan is null ? null : ResolveSide(goal.OwnerClan.StringId, war);
+            var camp = goal?.SiegeEvent?.BesiegerCamp;
+            var siegeClan = camp?.LeaderParty?.ActualClan;
+            string siege = camp?.LeaderParty is null
+                ? "none"
+                : $"{camp.LeaderParty.StringId}(side={(siegeClan is null ? null : ResolveSide(siegeClan.StringId, war))?.ToString() ?? "-"}, prepDone={camp.IsPreparationComplete})";
+            _logger.LogDebug(
+                "[PW] {War} {Date}: score={Score:0.#} battle={Battle:0.#} attHoldsGoal={AttHolds} prisoners(def/att)={DefPrisoners}/{AttPrisoners} goal={Goal} owner={Owner}({OwnerSide}) wall={Wall} siege={Siege}",
+                war.Id, CampaignTime.Now, war.Score, obs.AccumulatedBattleScore, obs.AttackerHoldsMainGoal,
+                obs.DefenderClanPrisonersHeldByAttackerSide, obs.AttackerClanPrisonersHeldByDefenderSide,
+                war.MainGoalSettlementId, goal?.OwnerClan?.StringId, ownerSide?.ToString() ?? "third-party",
+                goal?.Town?.GetWallLevel() ?? 0, siege);
+            if (goal is null || ownerSide is null) return;
+
+            var side = ownerSide == WarSide.Attacker ? WarSide.Defender : WarSide.Attacker;
+            var objective = new PrivateWarGoal(war, side, goal);
+            var principalId = side == WarSide.Attacker ? war.AttackerPrincipalClanId : war.DefenderPrincipalClanId;
+            var kingdom = Clan.All.FirstOrDefault(c => c.StringId == principalId)?.Kingdom;
+            if (kingdom is null) return;
+
+            MobileParty? leader = null;
+            var parties = new List<string>();
+            foreach (WarPartyComponent component in kingdom.WarPartyComponents)
+            {
+                var party = component.MobileParty;
+                var clan = party.ActualClan;
+                if (clan is null || !party.IsActive || ResolveSide(clan.StringId, war) != side) continue;
+
+                if (leader is null && IsDesignatedSideLeader(party, objective)) leader = party;
+                parties.Add($"{party.StringId}[str={party.GetTotalLandStrengthWithFollowers():0} {party.DefaultBehavior}->{party.TargetSettlement?.StringId ?? "-"} army={party.Army?.LeaderParty?.StringId ?? "-"} blockers={DescribeLeadBlockers(party)}]");
+            }
+
+            float defence = EstimateGoalDefence(objective);
+            int wallLevel = goal.Town?.GetWallLevel() ?? 0;
+            _logger.LogDebug("[PW] {War} {Side} side parties: {Parties}", war.Id, side, string.Join("; ", parties));
+            if (leader is null)
+            {
+                _logger.LogDebug("[PW] {War} {Side}: no eligible leader, no siege bid (defence={Defence:0})", war.Id, side, defence);
+                return;
+            }
+
+            var members = leader.Army == null ? GetPrivateWarArmyMembers(leader, objective) : null;
+            float solo = leader.GetTotalLandStrengthWithFollowers();
+            float armyStrength = solo + (members?.Sum(member => member.Party.GetCustomStrength(
+                BattleSideEnum.Attacker, MapEvent.PowerCalculationContext.Siege)) ?? 0f);
+            _logger.LogDebug(
+                "[PW] {War} {Side}: leader={Leader} inBattle={InBattle} members=[{Members}] armyStr={ArmyStr:0} soloStr={Solo:0} defence={Defence:0} wall={Wall} armyFactor={ArmyFactor:0.##} soloFactor={SoloFactor:0.##}",
+                war.Id, side, leader.StringId, leader.MapEvent != null,
+                members is null ? "-" : string.Join(",", members.Select(member => member.StringId)),
+                armyStrength, solo, defence, wallLevel,
+                members is null ? 0f : _siegeStrengthPolicy.GetScoreFactor(armyStrength, defence, wallLevel, false),
+                _siegeStrengthPolicy.GetScoreFactor(solo, defence, wallLevel, leader.BesiegedSettlement == goal));
+        }
+
+        // Mirrors CanLeadPrivateWarArmy, naming each failed condition for the daily trace.
+        private static string DescribeLeadBlockers(MobileParty party)
+        {
+            var models = TaleWorlds.CampaignSystem.Campaign.Current.Models;
+            var clan = party.LeaderHero?.Clan;
+            var blockers = new List<string>();
+            if (party.LeaderHero is null || clan is null) blockers.Add("noLeader");
+            if (party.Army != null) blockers.Add("inArmy");
+            if (party.MapFaction is not Kingdom) blockers.Add("noKingdom");
+            if (party.IsCurrentlyAtSea) blockers.Add("atSea");
+            if (clan != null && clan.Influence <= 100f) blockers.Add($"influence={clan.Influence:0}");
+            if (clan != null && clan.IsUnderMercenaryService) blockers.Add("mercenary");
+            if (party.GetNumDaysForFoodToLast() <= models.MobilePartyAIModel.NeededFoodsInDaysThresholdForSiege)
+                blockers.Add($"food={party.GetNumDaysForFoodToLast()}d");
+            if (party.PartySizeRatio <= models.ArmyManagementCalculationModel.AIMobilePartySizeRatioToCallToArmy)
+                blockers.Add($"sizeRatio={party.PartySizeRatio:0.##}");
+            if (party.MapEvent != null) blockers.Add("inBattle");
+            if (blockers.Count == 0 && !CanLeadPrivateWarArmy(party)) blockers.Add("notClanLeader");
+            return blockers.Count == 0 ? "none" : string.Join("|", blockers);
+        }
+
+        // A belligerent already called into an ordinary kingdom army when its war broke out is held there,
+        // never eligible to lead or join its side's goal army. Pull it out unless its own side leads the
+        // army against the war goal. Player-led armies are left alone.
+        private void ReleaseBelligerentsFromForeignArmies(PrivateWar war)
+        {
+            foreach (var party in MobileParty.AllLordParties.ToList())
+            {
+                var army = party.Army;
+                var clan = party.ActualClan;
+                if (army is null || army.LeaderParty == party || army.LeaderParty is null
+                    || army.LeaderParty.IsMainParty || clan is null || party.MapEvent != null)
+                {
+                    continue;
+                }
+
+                var side = ResolveSide(clan.StringId, war);
+                if (side is null) continue;
+
+                var leaderClan = army.LeaderParty.ActualClan;
+                bool isOwnGoalArmy = leaderClan != null
+                                     && ResolveSide(leaderClan.StringId, war) == side
+                                     && (army.AiBehaviorObject as Settlement)?.StringId == war.MainGoalSettlementId;
+                if (!isOwnGoalArmy)
+                    party.Army = null;
             }
         }
 
@@ -400,7 +671,15 @@ namespace Bannerlord.PrivateWars.Campaign
 
                 // ApplyBySiege is synchronous. Do not capture/update the fatigue epoch unless the
                 // requested ownership transfer actually completed.
-                if (goal.OwnerClan != leaderHero.Clan) continue;
+                if (goal.OwnerClan != leaderHero.Clan)
+                {
+                    _logger.LogWarning("[PW] {War} capture of {Goal} by {Leader} did not transfer ownership (owner={Owner})",
+                        war.Id, goal.StringId, leaderHero.StringId, goal.OwnerClan?.StringId);
+                    continue;
+                }
+                _logger.LogDebug("[PW] {War} {Goal} captured by {Leader} ({Clan}); prisoners=[{Losers}]",
+                    war.Id, goal.StringId, leaderHero.StringId, leaderHero.Clan?.StringId,
+                    string.Join(",", losingHeroes.Select(hero => hero.StringId)));
 
                 // Classic-war parity: a same-kingdom capture changes neither MapFaction nor stages an assault
                 // MapEvent, so the engine's own post-assault prisoner-taking (MapEvent.LootDefeatedPartyMembers
@@ -426,6 +705,29 @@ namespace Bannerlord.PrivateWars.Campaign
         // share a kingdom, that premise is void and a stale Active record would keep forcing
         // cross-kingdom hostility; conclude it. Subtree vassals need no handling - WarSideResolver
         // re-resolves their side from the current suzerain chain on every query.
+        // Diagnostic: a war goal changing hands outside our own capture path (observed: Kenilworth went
+        // to an uninvolved clan a day after the attacker took it). The stack trace names the engine path.
+        private void OnSettlementOwnerChanged(
+            Settlement settlement,
+            bool openToClaim,
+            Hero newOwner,
+            Hero oldOwner,
+            Hero capturerHero,
+            ChangeOwnerOfSettlementAction.ChangeOwnerOfSettlementDetail detail)
+        {
+            if (!_logger.IsEnabled(LogLevel.Debug) || settlement is null) return;
+
+            foreach (var war in _privateWars.Snapshot())
+            {
+                if (war.Status != PrivateWarStatus.Active || war.MainGoalSettlementId != settlement.StringId) continue;
+
+                _logger.LogDebug("[PW] {War} goal {Goal} owner {Old}({OldClan}) -> {New}({NewClan}) detail={Detail} capturer={Capturer} openToClaim={OpenToClaim}\n{Stack}",
+                    war.Id, settlement.StringId, oldOwner?.StringId, oldOwner?.Clan?.StringId,
+                    newOwner?.StringId, newOwner?.Clan?.StringId, detail, capturerHero?.StringId, openToClaim,
+                    new System.Diagnostics.StackTrace(1, false));
+            }
+        }
+
         private void OnClanChangedKingdom(
             Clan clan, Kingdom oldKingdom, Kingdom newKingdom,
             ChangeKingdomAction.ChangeKingdomActionDetail detail, bool showNotification)
@@ -592,6 +894,9 @@ namespace Bannerlord.PrivateWars.Campaign
             }
 
             var plan = _resolvePrivateWar.Execute(war, outcome, currentOwners, clanId => ResolveSide(clanId, war));
+            _logger.LogDebug("[PW] {War} resolved {Outcome} at score={Score:0.#}; reverts=[{Reverts}]",
+                war.Id, outcome, war.Score,
+                string.Join(",", plan.Reverts.Select(revert => $"{revert.SettlementId}->{revert.RevertToClanId}")));
 
             foreach (var revert in plan.Reverts)
             {
@@ -650,9 +955,6 @@ namespace Bannerlord.PrivateWars.Campaign
         // currently holds it - so the attacker marches to take the goal, and once it falls the defender
         // marches to reclaim it, both through this one path. A side never besieges a fief its own side
         // already holds. The player drives their own clan, and a party mid-battle is left to the engine.
-        // An attached army member still gets the goal injected so that quitting the army to prosecute (or
-        // defend) the feud is a *scored* AI decision: the besiege candidate competes with
-        // AiArmyMemberBehavior's escort-the-leader score (10-20) in the same vote.
         private PrivateWarGoal? FindPrivateWarGoalFor(MobileParty mobileParty)
         {
             if (mobileParty is null || !mobileParty.IsActive || mobileParty.IsMainParty) return null;

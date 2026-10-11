@@ -56,7 +56,8 @@ namespace Bannerlord.PrivateWars.GameModels
                     BattleSideEnum.Attacker, MapEvent.PowerCalculationContext.Siege),
                 kingdom?.Settlements.Count > 0,
                 candidates,
-                PrivateWarsServices.PrivateWarHostility.AreEnemies);
+                PrivateWarsServices.PrivateWarHostility.AreEnemies,
+                PrivateWarsServices.PrivateWarHostility.IsBelligerent);
 
             if (!decision.CanCreateArmy)
             {

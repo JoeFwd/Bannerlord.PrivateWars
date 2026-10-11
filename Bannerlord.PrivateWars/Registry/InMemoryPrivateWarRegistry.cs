@@ -171,6 +171,20 @@ namespace Bannerlord.PrivateWars.Registry
             }
         }
 
+        public bool IsBelligerent(string clanId)
+        {
+            lock (_sync)
+            {
+                bool cache = RefreshHierarchy();
+                foreach (var war in _warsById.Values)
+                {
+                    if (war.Status == PrivateWarStatus.Active && ResolveSide(clanId, war, cache) is not null)
+                        return true;
+                }
+                return false;
+            }
+        }
+
         /// <summary>
         /// Which side of the war a clan fights on, from the shared side cache. A war instance this
         /// registry does not currently store (a record about to be updated, or one just removed) is

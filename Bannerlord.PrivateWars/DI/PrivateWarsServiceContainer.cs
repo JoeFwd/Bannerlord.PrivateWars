@@ -61,6 +61,8 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<PrivateWarCaptivityPolicy>();
             services.AddSingleton<PrivateWarSallyOutPolicy>();
             services.AddSingleton<PrivateWarSyntheticCapturePolicy>();
+            services.AddSingleton<PrivateWarSiegeStrengthPolicy>();
+            services.AddSingleton<PrivateWarSideLeaderSelector>();
             services.AddSingleton<PrivateWarArmyDecisionAdapter>();
 
             // Campaign behaviour (persistence lifecycle). Also the live-state resolution seam behind

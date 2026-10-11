@@ -45,7 +45,6 @@ namespace Bannerlord.PrivateWars.Armies
             IReadOnlyList<PrivateWarArmyCandidate> candidates,
             IReadOnlyList<PrivateWarArmyAssignment> assignments,
             Func<string, string?> getSuzerain,
-            bool kingdomHasSettlements,
             int maximumMemberCount)
         {
             var plan = _policy.CreatePlan(
@@ -63,18 +62,9 @@ namespace Bannerlord.PrivateWars.Armies
                 maximumMemberCount);
             if (plan is null) return null;
 
-            var leader = candidates.First(candidate => candidate.PartyId == plan.LeaderPartyId);
-            var members = candidates
-                .Where(candidate => plan.MemberPartyIds.Contains(candidate.PartyId))
-                .ToList();
-            if (members.Count == 0
-                || kingdomHasSettlements
-                && leader.SiegeStrength + members.Sum(member => member.SiegeStrength) < 1000f)
-            {
-                return null;
-            }
-
-            return plan;
+            // No vanilla 1000-strength floor here: private sides are a lord's subtree, far smaller than a
+            // kingdom, and the caller already gates the bid on beating the goal's walled defence.
+            return plan.MemberPartyIds.Count == 0 ? null : plan;
         }
 
         public ArmyFormationDecision FilterOrdinaryMembers(
@@ -83,14 +73,18 @@ namespace Bannerlord.PrivateWars.Armies
             float leaderSiegeStrength,
             bool kingdomHasSettlements,
             IReadOnlyList<PrivateWarArmyCandidate> candidates,
-            Func<string, string, bool> areEnemies)
+            Func<string, string, bool> areEnemies,
+            Func<string, bool> isBelligerent)
         {
             if (!vanillaCanCreateArmy)
                 return new ArmyFormationDecision(false, Array.Empty<string>());
 
+            // A private-war belligerent stays free to prosecute its feud: an ordinary army would hold
+            // it for weeks, and private-war armies call their members through their own path.
             var members = candidates
                 .Where(candidate => candidate.CanJoinArmy)
                 .Where(candidate => !areEnemies(leaderClanId, candidate.ClanId))
+                .Where(candidate => !isBelligerent(candidate.ClanId))
                 .ToList();
             if (members.Count == 0
                 || kingdomHasSettlements
@@ -114,9 +108,17 @@ namespace Bannerlord.PrivateWars.Armies
         {
             if (isBesieger
                 && hasActivePrivateWar
-                && leaderPartyId == privateWarLeaderPartyId
                 && targetSettlementId == frozenGoalSettlementId)
             {
+                // Only the side's designated leader raises the goal army; a second leader's army would
+                // split the side (observed: five armies on one goal from a flickering designation).
+                if (leaderPartyId != privateWarLeaderPartyId)
+                {
+                    return new PrivateWarArmyCreationDecision(
+                        PrivateWarArmyCreationAction.Suppress,
+                        Array.Empty<string>());
+                }
+
                 var memberPartyIds = revalidateMembers();
                 if (memberPartyIds != null)
                 {

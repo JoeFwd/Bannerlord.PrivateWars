@@ -25,7 +25,8 @@ public class PrivateWarArmyDecisionAdapterTests
             leaderSiegeStrength: 500f,
             kingdomHasSettlements: true,
             candidates,
-            (left, right) => left == "A" && right == "D");
+            (left, right) => left == "A" && right == "D",
+            _ => false);
 
         Assert.False(decision.CanCreateArmy);
         Assert.Empty(decision.MemberPartyIds);
@@ -47,14 +48,38 @@ public class PrivateWarArmyDecisionAdapterTests
             leaderSiegeStrength: 500f,
             kingdomHasSettlements: true,
             candidates,
-            (left, right) => left == "A" && right == "D");
+            (left, right) => left == "A" && right == "D",
+            _ => false);
 
         Assert.True(decision.CanCreateArmy);
         Assert.Equal(new[] { "ally" }, decision.MemberPartyIds);
     }
 
     [Fact]
-    public void CreatePlan_RejectsPrivateArmyThatFailsVanillaStrengthContract()
+    public void FilterOrdinaryMembers_KeepsPrivateWarBelligerentsOutOfOrdinaryArmies()
+    {
+        var adapter = new PrivateWarArmyDecisionAdapter(new PrivateWarArmyPolicy());
+        var candidates = new[]
+        {
+            new PrivateWarArmyCandidate("neutral", "N", false, true, 1200f, 1f),
+            new PrivateWarArmyCandidate("belligerent", "B", false, true, 1200f, 1f)
+        };
+
+        var decision = adapter.FilterOrdinaryMembers(
+            vanillaCanCreateArmy: true,
+            leaderClanId: "K",
+            leaderSiegeStrength: 500f,
+            kingdomHasSettlements: true,
+            candidates,
+            (_, _) => false,
+            clanId => clanId == "B");
+
+        Assert.True(decision.CanCreateArmy);
+        Assert.Equal(new[] { "neutral" }, decision.MemberPartyIds);
+    }
+
+    [Fact]
+    public void CreatePlan_AcceptsPrivateArmyBelowVanillaStrengthFloor()
     {
         var adapter = new PrivateWarArmyDecisionAdapter(new PrivateWarArmyPolicy());
         var candidates = new[]
@@ -67,9 +92,9 @@ public class PrivateWarArmyDecisionAdapterTests
             War(), WarSide.Attacker, "leader", candidates,
             Array.Empty<PrivateWarArmyAssignment>(),
             clan => clan == "A_vassal" ? "A" : null,
-            kingdomHasSettlements: true, maximumMemberCount: 1);
+            maximumMemberCount: 1);
 
-        Assert.Null(plan);
+        Assert.Equal(new[] { "same_side" }, plan?.MemberPartyIds);
     }
 
     [Fact]
@@ -92,7 +117,6 @@ public class PrivateWarArmyDecisionAdapterTests
                 "A_subvassal" => "A_vassal",
                 _ => null
             },
-            kingdomHasSettlements: true,
             maximumMemberCount: 1);
 
         Assert.Equal(new[] { "second" }, plan?.MemberPartyIds);
@@ -101,7 +125,6 @@ public class PrivateWarArmyDecisionAdapterTests
     [Theory]
     [InlineData(false, true, "leader", "goal", "leader", "goal")]
     [InlineData(true, false, "leader", "goal", "leader", "goal")]
-    [InlineData(true, true, "leader", "goal", "other", "goal")]
     [InlineData(true, true, "leader", "goal", "leader", "other_goal")]
     public void DecidePrivateCreation_LeavesUnrelatedCreationUnchanged(
         bool isBesieger,
@@ -154,6 +177,29 @@ public class PrivateWarArmyDecisionAdapterTests
         Assert.Equal(PrivateWarArmyCreationAction.ReplaceMembers, decision.Action);
         Assert.Same(authorizedMembers, decision.MemberPartyIds);
         Assert.Equal(1, revalidationCalls);
+    }
+
+    [Fact]
+    public void DecidePrivateCreation_SuppressesGoalArmyFromNonDesignatedLeader()
+    {
+        var adapter = new PrivateWarArmyDecisionAdapter(new PrivateWarArmyPolicy());
+        var revalidationCalls = 0;
+
+        var decision = adapter.DecidePrivateCreation(
+            isBesieger: true,
+            hasActivePrivateWar: true,
+            leaderPartyId: "leader",
+            targetSettlementId: "goal",
+            privateWarLeaderPartyId: "other",
+            frozenGoalSettlementId: "goal",
+            revalidateMembers: () =>
+            {
+                revalidationCalls++;
+                return new[] { "member" };
+            });
+
+        Assert.Equal(PrivateWarArmyCreationAction.Suppress, decision.Action);
+        Assert.Equal(0, revalidationCalls);
     }
 
     [Fact]
