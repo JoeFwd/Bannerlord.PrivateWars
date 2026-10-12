@@ -26,6 +26,7 @@ public static class PrivateWarsApiFactory
             Resolve<IPrivateWarHostility>,
             Resolve<IDeclarePrivateWarUseCase>,
             Resolve<IResolvePrivateWarByIdUseCase>,
+            Resolve<IAssessPrivateWarProsecutionUseCase>,
             Resolve<MutableSuzerainProvider>,
             Resolve<MutablePrivateWarNameplateColorProvider>);
     }

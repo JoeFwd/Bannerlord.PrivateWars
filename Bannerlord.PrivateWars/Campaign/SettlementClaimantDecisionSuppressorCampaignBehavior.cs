@@ -2,7 +2,6 @@ using System.Linq;
 using Bannerlord.PrivateWars.Domain.Model;
 using Bannerlord.PrivateWars.Domain.Port;
 using TaleWorlds.CampaignSystem;
-using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.Election;
 using TaleWorlds.CampaignSystem.Settlements;
 
@@ -36,23 +35,17 @@ namespace Bannerlord.PrivateWars.Campaign
         public override void RegisterEvents()
         {
             CampaignEvents.OnGameLoadedEvent.AddNonSerializedListener(this, OnGameLoaded);
-            CampaignEvents.OnSettlementOwnerChangedEvent.AddNonSerializedListener(this, OnSettlementOwnerChanged);
+            CampaignEvents.DailyTickSettlementEvent.AddNonSerializedListener(this, OnDailyTickSettlement);
         }
 
         public override void SyncData(IDataStore dataStore) { }
 
-        // The stock listener on this same event is what sets the flag, and listeners run in
-        // registration order, so this one runs after it and clears it again before the settlement's
-        // next daily tick can read it.
-        private void OnSettlementOwnerChanged(
-            Settlement settlement,
-            bool openToClaim,
-            Hero newOwner,
-            Hero oldOwner,
-            Hero capturerHero,
-            ChangeOwnerOfSettlementAction.ChangeOwnerOfSettlementDetail detail)
+        // MbEvent prepends listeners, so a behaviour registered later runs first. That rules out clearing
+        // the flag on OnSettlementOwnerChanged (this would run before the stock listener sets it), but on
+        // the daily tick it means this runs before the stock listener reads the flag.
+        private void OnDailyTickSettlement(Settlement settlement)
         {
-            if (!openToClaim || settlement?.Town is null) return;
+            if (settlement.Town is null || !settlement.Town.IsOwnerUnassigned) return;
             if (!IsContested(settlement.StringId)) return;
 
             settlement.Town.IsOwnerUnassigned = false;

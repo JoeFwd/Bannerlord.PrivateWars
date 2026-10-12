@@ -23,6 +23,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
     private readonly Func<IPrivateWarHostility?> _hostilityResolver;
     private readonly Func<IDeclarePrivateWarUseCase?> _declareResolver;
     private readonly Func<IResolvePrivateWarByIdUseCase?> _behaviorResolver;
+    private readonly Func<IAssessPrivateWarProsecutionUseCase?> _prosecutionResolver;
     private readonly Func<MutableSuzerainProvider?> _suzerainResolver;
     private readonly Func<MutablePrivateWarNameplateColorProvider?> _nameplateResolver;
 
@@ -37,6 +38,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         Func<IPrivateWarHostility?> hostilityResolver,
         Func<IDeclarePrivateWarUseCase?> declareResolver,
         Func<IResolvePrivateWarByIdUseCase?> behaviorResolver,
+        Func<IAssessPrivateWarProsecutionUseCase?> prosecutionResolver,
         Func<MutableSuzerainProvider?> suzerainResolver,
         Func<MutablePrivateWarNameplateColorProvider?> nameplateResolver)
     {
@@ -44,6 +46,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         _hostilityResolver = hostilityResolver;
         _declareResolver = declareResolver;
         _behaviorResolver = behaviorResolver;
+        _prosecutionResolver = prosecutionResolver;
         _suzerainResolver = suzerainResolver;
         _nameplateResolver = nameplateResolver;
     }
@@ -124,6 +127,18 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         var info = Map(war);
         WarDeclared?.Invoke(info);
         return info;
+    }
+
+    public bool CanProsecute(
+        string attackerClanId,
+        string defenderClanId,
+        string mainGoalSettlementId,
+        IReadOnlyCollection<string> attackerSupporters,
+        IReadOnlyCollection<string> defenderSupporters)
+    {
+        var prosecution = _prosecutionResolver();
+        return prosecution != null
+               && prosecution.CanProsecute(attackerClanId, defenderClanId, mainGoalSettlementId, attackerSupporters, defenderSupporters);
     }
 
     public PrivateWarInfo? ResolveWar(string warId, PrivateWarOutcome outcome)

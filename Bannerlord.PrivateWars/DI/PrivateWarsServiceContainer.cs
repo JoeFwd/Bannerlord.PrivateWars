@@ -69,6 +69,7 @@ namespace Bannerlord.PrivateWars.DI
             // IPrivateWarsApi.ResolveWar, exposed as a game-free port so the API can route through it.
             services.AddSingleton<PrivateWarCampaignBehavior>();
             services.AddSingleton<IResolvePrivateWarByIdUseCase>(sp => sp.GetRequiredService<PrivateWarCampaignBehavior>());
+            services.AddSingleton<IAssessPrivateWarProsecutionUseCase>(sp => sp.GetRequiredService<PrivateWarCampaignBehavior>());
 
             // Game models (resolved lazily in the SubModule)
             services.AddTransient<PrivateWarTargetScoreCalculatingModel>();
@@ -88,6 +89,9 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<IPatch, MobilePartyAiIsEnemyPatch>();
             services.AddSingleton<IPatch, MobilePartyAiStanceScorePatch>();
             services.AddSingleton<IPatch, StartPartyEncounterBattlePatch>();
+            services.AddSingleton<IPatch, MapEventUpdateEnterPrivateWarScopePatch>();
+            services.AddSingleton<IPatch, MapEventUpdateExitPrivateWarScopePatch>();
+            services.AddSingleton<IPatch, KingdomIsAtWarWithPrivateWarPatch>();
             services.AddSingleton<IPatch, CanPartyJoinBattlePatch>();
             services.AddSingleton<IPatch, KingdomCreateArmyPatch>();
             services.AddSingleton<IPatch, PrivateWarPrisonerRetentionPatch>();

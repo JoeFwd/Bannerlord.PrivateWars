@@ -53,6 +53,19 @@ public interface IPrivateWarsApi
         IReadOnlyCollection<string> defenderSupporters);
 
     /// <summary>
+    /// Whether the attacker side of a war with these sides could besiege the main goal today: some
+    /// party on it can lead a private-war army that beats the goal's walled defence. Check before
+    /// <see cref="DeclareWar"/> so a clan does not declare a war it cannot fight. The attacker may be
+    /// a clan that does not exist yet, in which case only its supporters are counted.
+    /// </summary>
+    bool CanProsecute(
+        string attackerClanId,
+        string defenderClanId,
+        string mainGoalSettlementId,
+        IReadOnlyCollection<string> attackerSupporters,
+        IReadOnlyCollection<string> defenderSupporters);
+
+    /// <summary>
     /// Resolves an existing private war under the given outcome. Returns the resolved war snapshot,
     /// or null if no war with that id exists.
     /// </summary>

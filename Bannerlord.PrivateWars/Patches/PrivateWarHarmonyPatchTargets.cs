@@ -56,6 +56,19 @@ namespace Bannerlord.PrivateWars.Patches
             typeof(PartyBase),
             typeof(PartyBase));
 
+        public static MethodInfo MapEventUpdate() => ResolveExact(
+            typeof(MapEvent),
+            "Update",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(void));
+
+        public static MethodInfo KingdomIsAtWarWith() => ResolveExact(
+            typeof(Kingdom),
+            nameof(Kingdom.IsAtWarWith),
+            BindingFlags.Instance | BindingFlags.Public,
+            typeof(bool),
+            typeof(IFaction));
+
         public static MethodInfo CanPartyJoinBattle() => ResolveExact(
             typeof(MapEvent),
             nameof(MapEvent.CanPartyJoinBattle),

@@ -34,7 +34,8 @@ namespace Bannerlord.PrivateWars.Campaign
      *  its goal as the prize.
      * </summary>
      */
-    public class PrivateWarCampaignBehavior : CampaignBehaviorBase, IResolvePrivateWarByIdUseCase
+    public class PrivateWarCampaignBehavior : CampaignBehaviorBase, IResolvePrivateWarByIdUseCase,
+        IAssessPrivateWarProsecutionUseCase
     {
         // Score injected into the AI behaviour vote for a private-war attacker's besiege of the goal.
         // AiPartyThinkBehavior applies the maximum-scoring candidate, so this must beat ordinary /
@@ -108,6 +109,33 @@ namespace Bannerlord.PrivateWars.Campaign
             CampaignEvents.MapEventEnded.AddNonSerializedListener(this, OnMapEventEnded);
             CampaignEvents.OnClanChangedKingdomEvent.AddNonSerializedListener(this, OnClanChangedKingdom);
             CampaignEvents.OnSettlementOwnerChangedEvent.AddNonSerializedListener(this, OnSettlementOwnerChanged);
+            CampaignEvents.OnPartyJoinedArmyEvent.AddNonSerializedListener(this, OnPartyJoinedArmy);
+            CampaignEvents.OnPartyLeftArmyEvent.AddNonSerializedListener(this, OnPartyLeftArmy);
+            CampaignEvents.ArmyDispersed.AddNonSerializedListener(this, OnArmyDispersed);
+        }
+
+        private bool IsGoalArmy(Army army)
+            => army?.LeaderParty is not null && _goalArmyLeaders.ContainsValue(army.LeaderParty.StringId);
+
+        private void OnPartyJoinedArmy(MobileParty party)
+        {
+            if (!IsGoalArmy(party.Army) || party == party.Army.LeaderParty) return;
+            _logger.LogDebug("[PW] goal army {Leader} joined by {Party}", party.Army.LeaderParty.StringId, party.StringId);
+        }
+
+        private void OnPartyLeftArmy(MobileParty party, Army army)
+        {
+            if (!IsGoalArmy(army) || party == army.LeaderParty) return;
+            _logger.LogDebug("[PW] goal army {Leader} lost {Party}: cohesion={Cohesion:0} food={Food:0.#}d inBattle={InBattle} attached={Attached} behaviour={Behaviour}",
+                army.LeaderParty.StringId, party.StringId, army.Cohesion, party.GetNumDaysForFoodToLast(),
+                party.MapEvent != null, party.AttachedTo != null, party.DefaultBehavior);
+        }
+
+        private void OnArmyDispersed(Army army, Army.ArmyDispersionReason reason, bool isPlayersArmy)
+        {
+            if (!IsGoalArmy(army)) return;
+            _logger.LogDebug("[PW] goal army {Leader} dispersed: {Reason} cohesion={Cohesion:0} parties={Count}",
+                army.LeaderParty.StringId, reason, army.Cohesion, army.Parties.Count);
         }
 
         public override void SyncData(IDataStore dataStore)
@@ -602,10 +630,14 @@ namespace Bannerlord.PrivateWars.Campaign
                 var side = ResolveSide(clan.StringId, war);
                 if (side is null) continue;
 
+                // A gathering army points at its gathering fortress, not the goal, so also recognise the
+                // army this side raised against the goal.
                 var leaderClan = army.LeaderParty.ActualClan;
                 bool isOwnGoalArmy = leaderClan != null
                                      && ResolveSide(leaderClan.StringId, war) == side
-                                     && (army.AiBehaviorObject as Settlement)?.StringId == war.MainGoalSettlementId;
+                                     && ((army.AiBehaviorObject as Settlement)?.StringId == war.MainGoalSettlementId
+                                         || _goalArmyLeaders.TryGetValue((war.Id, side.Value), out var raisedBy)
+                                         && raisedBy == army.LeaderParty.StringId);
                 if (!isOwnGoalArmy)
                     party.Army = null;
             }
@@ -774,12 +806,24 @@ namespace Bannerlord.PrivateWars.Campaign
                     ? mapEvent.DefenderSide
                     : mapEvent.AttackerSide;
 
-                var outcome = new BattleOutcome(
-                    winnerWarSide,
-                    losingSide.CasualtyStrength,
-                    losingSide.CasualtyStrength + losingSide.RecalculateStrengthOfSide());
+                var partiesNotInBattle = new List<(WarSide Side, float Strength)>();
+                foreach (var party in MobileParty.AllLordParties)
+                {
+                    if (party.MapEvent == mapEvent || party.ActualClan is null) continue;
+                    if (ResolveSide(party.ActualClan.StringId, war) is { } side)
+                        partiesNotInBattle.Add((side, party.Party.EstimatedStrength));
+                }
 
-                _privateWars.Update(_applyBattleOutcome.Execute(war, outcome));
+                var outcome = BattleOutcome.Measure(
+                    winnerWarSide,
+                    losingSide.CasualtyStrength + losingSide.RecalculateStrengthOfSide(),
+                    partiesNotInBattle);
+                var scored = _applyBattleOutcome.Execute(war, outcome);
+                _logger.LogDebug("[PW] {War} battle won by {Winner}: defeated={Defeated:0} sideTotal={Total:0} battle {Before:0.#} -> {After:0.#}",
+                    war.Id, winnerWarSide, outcome.EnemyForceDefeated, outcome.LosingSideTotalStrength,
+                    war.BattleScore, scored.BattleScore);
+
+                _privateWars.Update(scored);
             }
         }
 
@@ -878,6 +922,59 @@ namespace Bannerlord.PrivateWars.Campaign
 
             ResolveWar(war, outcome);
             return _privateWars.Get(warId);
+        }
+
+        // Priced through the same gates the side leader bids through in OnAiHourlyTick, on a war record
+        // that is never registered: the side resolver resolves an unstored war fresh. An army is never
+        // weaker than its leader alone, so only the gathered-army bid needs checking.
+        public bool CanProsecute(
+            string attackerClanId,
+            string defenderClanId,
+            string mainGoalSettlementId,
+            IReadOnlyCollection<string> attackerSupporters,
+            IReadOnlyCollection<string> defenderSupporters)
+        {
+            var goal = Settlement.Find(mainGoalSettlementId);
+            if (goal is null || !goal.IsFortification || goal.MapFaction is not Kingdom kingdom) return false;
+
+            var war = new PrivateWar(
+                Id: $"pw_assessment_{attackerClanId}_{defenderClanId}",
+                AttackerPrincipalClanId: attackerClanId,
+                DefenderPrincipalClanId: defenderClanId,
+                AttackerSupporters: attackerSupporters,
+                DefenderSupporters: defenderSupporters,
+                CasusBelliType: string.Empty,
+                TitleId: string.Empty,
+                MainGoalSettlementId: mainGoalSettlementId,
+                OriginalFiefOwners: new Dictionary<string, string>(),
+                BattleScore: 0f,
+                Score: 0f,
+                StartDay: 0f,
+                GoalLastTakenDay: 0f,
+                Status: PrivateWarStatus.Active);
+            var objective = new PrivateWarGoal(war, WarSide.Attacker, goal);
+
+            float defence = EstimateGoalDefence(objective);
+            int wallLevel = goal.Town?.GetWallLevel() ?? 0;
+            float bestStrength = 0f;
+
+            foreach (WarPartyComponent component in kingdom.WarPartyComponents)
+            {
+                var party = component.MobileParty;
+                var clan = party.ActualClan;
+                if (clan is null || !party.IsActive || party.IsMainParty || clan == Clan.PlayerClan) continue;
+                if (ResolveSide(clan.StringId, war) != WarSide.Attacker || !CanLeadPrivateWarArmy(party)) continue;
+
+                float strength = party.GetTotalLandStrengthWithFollowers()
+                                 + (GetPrivateWarArmyMembers(party, objective)?.Sum(member => member.Party.GetCustomStrength(
+                                     BattleSideEnum.Attacker, MapEvent.PowerCalculationContext.Siege)) ?? 0f);
+                bestStrength = Math.Max(bestStrength, strength);
+            }
+
+            bool canProsecute = _siegeStrengthPolicy.GetScoreFactor(bestStrength, defence, wallLevel, isHoldingSiege: false) > 0f;
+            _logger.LogDebug("[PW] prosecution check {Attacker} vs {Defender} on {Goal}: best army={Strength:0} defence={Defence:0} walls={Walls} -> {Result}",
+                attackerClanId, defenderClanId, mainGoalSettlementId, bestStrength, defence, wallLevel, canProsecute);
+            return canProsecute;
         }
 
         // Apply the terminal outcome to engine state: revert each captured fief to its pre-war owner.
