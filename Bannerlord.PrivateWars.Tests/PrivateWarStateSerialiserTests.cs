@@ -20,12 +20,29 @@ public class PrivateWarStateSerialiserTests
                 ["town"] = "defender",
                 ["castle"] = "attacker"
             },
-            12.5f, -7.25f, 100.5f, 110.75f, PrivateWarStatus.Active);
+            12.5f, -7.25f, 100.5f, 110.75f, PrivateWarStatus.Active)
+        {
+            ForeignSupporters = new[] { "attacker-ally-2", "defender-ally" }
+        };
 
         var serialised = PrivateWarStateSerialiser.SerialiseWars(new[] { original });
         var loaded = Assert.Single(PrivateWarStateSerialiser.DeserialiseWars(serialised));
 
         AssertWarEqual(original, loaded);
+    }
+
+    [Fact]
+    public void FourteenFieldRecord_LoadsWithNoForeignSupporters()
+    {
+        const string preForeign =
+            "war-current|attacker|defender|claim|title|goal|12.5|-7.25|100.5|Active|town:defender|110.75|ally-a|ally-d";
+
+        var loaded = Assert.Single(
+            PrivateWarStateSerialiser.DeserialiseWars(new List<string> { preForeign }));
+
+        Assert.Equal(new[] { "ally-a" }, loaded.AttackerSupporters);
+        Assert.Equal(new[] { "ally-d" }, loaded.DefenderSupporters);
+        Assert.Empty(loaded.ForeignSupporters);
     }
 
     [Fact]
@@ -65,6 +82,7 @@ public class PrivateWarStateSerialiserTests
 
         Assert.Empty(loaded.AttackerSupporters);
         Assert.Empty(loaded.DefenderSupporters);
+        Assert.Empty(loaded.ForeignSupporters);
     }
 
     [Fact]
@@ -88,6 +106,7 @@ public class PrivateWarStateSerialiserTests
         Assert.Equal(expected.DefenderPrincipalClanId, actual.DefenderPrincipalClanId);
         Assert.Equal(expected.AttackerSupporters, actual.AttackerSupporters);
         Assert.Equal(expected.DefenderSupporters, actual.DefenderSupporters);
+        Assert.Equal(expected.ForeignSupporters, actual.ForeignSupporters);
         Assert.Equal(expected.CasusBelliType, actual.CasusBelliType);
         Assert.Equal(expected.TitleId, actual.TitleId);
         Assert.Equal(expected.MainGoalSettlementId, actual.MainGoalSettlementId);

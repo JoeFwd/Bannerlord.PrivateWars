@@ -122,6 +122,16 @@ namespace Bannerlord.PrivateWars.Patches
             BindingFlags.Instance | BindingFlags.Public,
             typeof(bool));
 
+        // ApplyByNoActiveWar is a one-line forwarder small enough for the JIT to inline into its caller,
+        // which would bypass a prefix on it; the private ApplyInternal it forwards to is too big to inline.
+        public static MethodInfo DisbandArmyInternal() => ResolveExact(
+            typeof(DisbandArmyAction),
+            "ApplyInternal",
+            BindingFlags.Static | BindingFlags.NonPublic,
+            typeof(void),
+            typeof(Army),
+            typeof(Army.ArmyDispersionReason));
+
         private static MethodInfo ResolveExact(
             Type declaringType,
             string name,

@@ -24,6 +24,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
     private readonly Func<IDeclarePrivateWarUseCase?> _declareResolver;
     private readonly Func<IResolvePrivateWarByIdUseCase?> _behaviorResolver;
     private readonly Func<IAssessPrivateWarProsecutionUseCase?> _prosecutionResolver;
+    private readonly Func<IPrivateWarSidesProvider?> _sidesResolver;
     private readonly Func<MutableSuzerainProvider?> _suzerainResolver;
     private readonly Func<MutablePrivateWarNameplateColorProvider?> _nameplateResolver;
 
@@ -39,6 +40,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         Func<IDeclarePrivateWarUseCase?> declareResolver,
         Func<IResolvePrivateWarByIdUseCase?> behaviorResolver,
         Func<IAssessPrivateWarProsecutionUseCase?> prosecutionResolver,
+        Func<IPrivateWarSidesProvider?> sidesResolver,
         Func<MutableSuzerainProvider?> suzerainResolver,
         Func<MutablePrivateWarNameplateColorProvider?> nameplateResolver)
     {
@@ -47,6 +49,7 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         _declareResolver = declareResolver;
         _behaviorResolver = behaviorResolver;
         _prosecutionResolver = prosecutionResolver;
+        _sidesResolver = sidesResolver;
         _suzerainResolver = suzerainResolver;
         _nameplateResolver = nameplateResolver;
     }
@@ -103,7 +106,8 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         IReadOnlyDictionary<string, string> fiefSnapshot,
         float startDay,
         IReadOnlyCollection<string> attackerSupporters,
-        IReadOnlyCollection<string> defenderSupporters)
+        IReadOnlyCollection<string> defenderSupporters,
+        IReadOnlyCollection<string>? foreignSupporters = null)
     {
         EnsureSignalsSubscribed();
         var declare = _declareResolver();
@@ -119,7 +123,8 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
             fiefSnapshot,
             startDay,
             attackerSupporters,
-            defenderSupporters);
+            defenderSupporters,
+            foreignSupporters);
 
         if (war == null)
             return null;
@@ -127,6 +132,13 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         var info = Map(war);
         WarDeclared?.Invoke(info);
         return info;
+    }
+
+    public bool IsOnAttackerSide(string warId, string clanId)
+    {
+        var war = _repositoryResolver()?.Get(warId);
+        var sides = _sidesResolver();
+        return war != null && sides != null && sides.ResolveSide(clanId, war) == WarSide.Attacker;
     }
 
     public bool CanProsecute(

@@ -62,6 +62,8 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<PrivateWarSallyOutPolicy>();
             services.AddSingleton<PrivateWarSyntheticCapturePolicy>();
             services.AddSingleton<PrivateWarSiegeStrengthPolicy>();
+            services.AddSingleton<PrivateWarSiegeFoodPolicy>();
+            services.AddSingleton<PrivateWarSiegeDistancePolicy>();
             services.AddSingleton<PrivateWarSideLeaderSelector>();
             services.AddSingleton<PrivateWarArmyDecisionAdapter>();
 
@@ -94,6 +96,7 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<IPatch, KingdomIsAtWarWithPrivateWarPatch>();
             services.AddSingleton<IPatch, CanPartyJoinBattlePatch>();
             services.AddSingleton<IPatch, KingdomCreateArmyPatch>();
+            services.AddSingleton<IPatch, WarArmyNoActiveWarDispersalPatch>();
             services.AddSingleton<IPatch, PrivateWarPrisonerRetentionPatch>();
             services.AddSingleton<IPatch, RecruitmentEntryPatch>();
             services.AddSingleton<IPatch, SettlementVisitPatch>();

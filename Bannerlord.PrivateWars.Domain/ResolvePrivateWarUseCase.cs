@@ -7,8 +7,10 @@ namespace Bannerlord.PrivateWars.Domain
     /// <summary>
     /// Produces the status-quo-ante resolution (design §8): every snapshotted fief that changed hands
     /// reverts to its pre-war owner, EXCEPT (a) fiefs now held by a third party to this war — a clan
-    /// on neither side — which are not ours to move (design §18.E shared-goal case), and (b) on
-    /// attacker victory the main goal, which is handed to the attacker as the prize instead. Pure;
+    /// on neither side — which are not ours to move (design §18.E shared-goal case), fiefs other than
+    /// the goal that only moved between clans of one side, which were never captured, and (b) on
+    /// attacker victory the main goal, which is handed to the attacker principal as the prize
+    /// instead, taken from whichever clan of his side holds it. Pure;
     /// the integration layer applies the plan against engine state.
     /// </summary>
     public class ResolvePrivateWarUseCase : IResolvePrivateWarUseCase
@@ -32,14 +34,23 @@ namespace Bannerlord.PrivateWars.Domain
                     : originalOwner;
 
                 if (currentOwner == originalOwner) continue;                 // never left its owner
-                if (resolveSide(currentOwner) is null) continue;             // third party holds it now (§18.E)
+                var currentSide = resolveSide(currentOwner);
+                if (currentSide is null) continue;                           // third party holds it now (§18.E)
+                if (currentSide == resolveSide(originalOwner)
+                    && settlementId != war.MainGoalSettlementId) continue;   // moved within one side, not captured
                 if (attackerWon && settlementId == war.MainGoalSettlementId) continue; // becomes the prize
 
                 reverts.Add(new RevertInstruction(settlementId, originalOwner));
             }
 
+            // The prize goes to the principal even when an ally or vassal of his took the goal; a
+            // holder outside the attacker's side keeps it.
+            bool handOver = currentOwners.TryGetValue(war.MainGoalSettlementId, out var goalOwner)
+                            && goalOwner != war.AttackerPrincipalClanId
+                            && resolveSide(goalOwner) == WarSide.Attacker;
+
             PrizeAward? prize = attackerWon
-                ? new PrizeAward(war.MainGoalSettlementId, war.TitleId, war.AttackerPrincipalClanId)
+                ? new PrizeAward(war.MainGoalSettlementId, war.TitleId, war.AttackerPrincipalClanId, handOver)
                 : null;
 
             return new ResolutionPlan(reverts, prize, AttackerClaimLost: !attackerWon);

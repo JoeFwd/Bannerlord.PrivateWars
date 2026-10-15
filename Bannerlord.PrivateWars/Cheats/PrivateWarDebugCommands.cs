@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Bannerlord.PrivateWars.Domain;
+using Bannerlord.PrivateWars.Domain.Port;
 using Bannerlord.PrivateWars.DI;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
@@ -50,11 +51,14 @@ namespace Bannerlord.PrivateWars.Cheats
                     ? $"No settlement with id '{args[2]}'.\n" + ListNearestFortifications(defender)
                     : $"Defender clan '{defender.StringId}' holds no fortification to use as a goal; pass goalSettlementId explicitly.\n" + ListNearestFortifications(defender);
 
-            var fiefSnapshot = defender.Settlements
-                .Where(s => s.OwnerClan != null)
+            if (PrivateWarsServices.PrivateWars is not IPrivateWarSidesProvider sides)
+                return "Private-war sides provider unavailable.";
+
+            var fiefSnapshot = Settlement.All
+                .Where(s => (s.IsTown || s.IsCastle) && s.OwnerClan != null)
                 .ToDictionary(s => s.StringId, s => s.OwnerClan.StringId);
 
-            var useCase = new DeclarePrivateWarUseCase(PrivateWarsServices.PrivateWars);
+            var useCase = new DeclarePrivateWarUseCase(PrivateWarsServices.PrivateWars, sides);
             var war = useCase.Execute(
                 attacker.StringId,
                 defender.StringId,

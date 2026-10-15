@@ -132,7 +132,7 @@ public class PrivateWarArmyDecisionAdapterTests
         string leaderPartyId,
         string targetSettlementId,
         string privateWarLeaderPartyId,
-        string frozenGoalSettlementId)
+        string warTargetSettlementId)
     {
         var adapter = new PrivateWarArmyDecisionAdapter(new PrivateWarArmyPolicy());
         var revalidationCalls = 0;
@@ -143,7 +143,7 @@ public class PrivateWarArmyDecisionAdapterTests
             leaderPartyId,
             targetSettlementId,
             privateWarLeaderPartyId,
-            frozenGoalSettlementId,
+            warTargetSettlementId,
             () =>
             {
                 revalidationCalls++;
@@ -167,7 +167,7 @@ public class PrivateWarArmyDecisionAdapterTests
             leaderPartyId: "leader",
             targetSettlementId: "goal",
             privateWarLeaderPartyId: "leader",
-            frozenGoalSettlementId: "goal",
+            warTargetSettlementId: "goal",
             revalidateMembers: () =>
             {
                 revalidationCalls++;
@@ -180,7 +180,7 @@ public class PrivateWarArmyDecisionAdapterTests
     }
 
     [Fact]
-    public void DecidePrivateCreation_SuppressesGoalArmyFromNonDesignatedLeader()
+    public void DecidePrivateCreation_SuppressesWarArmyFromNonDesignatedLeader()
     {
         var adapter = new PrivateWarArmyDecisionAdapter(new PrivateWarArmyPolicy());
         var revalidationCalls = 0;
@@ -191,7 +191,7 @@ public class PrivateWarArmyDecisionAdapterTests
             leaderPartyId: "leader",
             targetSettlementId: "goal",
             privateWarLeaderPartyId: "other",
-            frozenGoalSettlementId: "goal",
+            warTargetSettlementId: "goal",
             revalidateMembers: () =>
             {
                 revalidationCalls++;
@@ -213,7 +213,7 @@ public class PrivateWarArmyDecisionAdapterTests
             leaderPartyId: "leader",
             targetSettlementId: "goal",
             privateWarLeaderPartyId: "leader",
-            frozenGoalSettlementId: "goal",
+            warTargetSettlementId: "goal",
             revalidateMembers: () => null);
 
         Assert.Equal(PrivateWarArmyCreationAction.Suppress, decision.Action);

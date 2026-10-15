@@ -103,14 +103,14 @@ namespace Bannerlord.PrivateWars.Armies
             string leaderPartyId,
             string targetSettlementId,
             string privateWarLeaderPartyId,
-            string frozenGoalSettlementId,
+            string warTargetSettlementId,
             Func<IReadOnlyList<string>?> revalidateMembers)
         {
             if (isBesieger
                 && hasActivePrivateWar
-                && targetSettlementId == frozenGoalSettlementId)
+                && targetSettlementId == warTargetSettlementId)
             {
-                // Only the side's designated leader raises the goal army; a second leader's army would
+                // Only the side's designated leader raises the war army; a second leader's army would
                 // split the side (observed: five armies on one goal from a flickering designation).
                 if (leaderPartyId != privateWarLeaderPartyId)
                 {

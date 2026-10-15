@@ -11,11 +11,11 @@ namespace Bannerlord.PrivateWars.Spi
      *  of <c>SaveableField</c> attributes. Mirrors <c>TitleStateSerialiser</c>.
      * </summary>
      * <remarks>
-     *  Line format (14 fields joined with '|'):
-     *  Id|Attacker|Defender|CasusBelliType|TitleId|MainGoalSettlementId|BattleScore|Score|StartDay|Status|OriginalFiefOwners|GoalLastTakenDay|AttackerSupporters|DefenderSupporters
+     *  Line format (15 fields joined with '|'):
+     *  Id|Attacker|Defender|CasusBelliType|TitleId|MainGoalSettlementId|BattleScore|Score|StartDay|Status|OriginalFiefOwners|GoalLastTakenDay|AttackerSupporters|DefenderSupporters|ForeignSupporters
      *  <para>
-     *  Fields are only ever appended, so older 11-, 12- and 13-field saves still load: GoalLastTakenDay
-     *  defaults to StartDay and the supporter rosters default to empty.
+     *  Fields are only ever appended, so older 11- to 14-field saves still load: GoalLastTakenDay
+     *  defaults to StartDay and the supporter rosters, foreign supporters included, default to empty.
      *  </para>
      *  <para>
      *  OriginalFiefOwners is a sub-delimited map: entries separated by ';', settlementId and
@@ -26,7 +26,8 @@ namespace Bannerlord.PrivateWars.Spi
      *  </para>
      *  <para>
      *  AttackerSupporters and DefenderSupporters are ';'-separated clan id lists, empty when a side
-     *  drew no support beyond its own vassal subtree.
+     *  drew no support beyond its own vassal subtree. ForeignSupporters, in the same format, is the
+     *  subset of both rosters that fights without its vassals.
      *  </para>
      * </remarks>
      */
@@ -58,7 +59,8 @@ namespace Bannerlord.PrivateWars.Spi
                     SerialiseFiefOwners(war.OriginalFiefOwners),
                     war.GoalLastTakenDay.ToString("R", CultureInfo.InvariantCulture),
                     SerialiseClanIds(war.AttackerSupporters),
-                    SerialiseClanIds(war.DefenderSupporters)));
+                    SerialiseClanIds(war.DefenderSupporters),
+                    SerialiseClanIds(war.ForeignSupporters)));
             }
 
             return serialised;
@@ -72,7 +74,7 @@ namespace Bannerlord.PrivateWars.Spi
                 if (line is null) continue;
 
                 string[] fields = line.Split(Delimiter);
-                if (fields.Length < 11 || fields.Length > 14) continue;
+                if (fields.Length < 11 || fields.Length > 15) continue;
                 if (!TryParseEnum(fields[9], out PrivateWarStatus status)) continue;
                 if (!float.TryParse(fields[6], NumberStyles.Float, CultureInfo.InvariantCulture, out float battleScore)) continue;
                 if (!float.TryParse(fields[7], NumberStyles.Float, CultureInfo.InvariantCulture, out float score)) continue;
@@ -100,7 +102,10 @@ namespace Bannerlord.PrivateWars.Spi
                     score,
                     startDay,
                     goalLastTakenDay,
-                    status));
+                    status)
+                {
+                    ForeignSupporters = fields.Length > 14 ? DeserialiseClanIds(fields[14]) : EmptyClanIds
+                });
             }
 
             return wars;

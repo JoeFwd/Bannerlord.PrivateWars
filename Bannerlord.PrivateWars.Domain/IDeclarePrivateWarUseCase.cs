@@ -13,6 +13,7 @@ namespace Bannerlord.PrivateWars.Domain
             IReadOnlyDictionary<string, string> fiefSnapshot,
             float startDay,
             IReadOnlyCollection<string> attackerSupporters,
-            IReadOnlyCollection<string> defenderSupporters);
+            IReadOnlyCollection<string> defenderSupporters,
+            IReadOnlyCollection<string>? foreignSupporters = null);
     }
 }

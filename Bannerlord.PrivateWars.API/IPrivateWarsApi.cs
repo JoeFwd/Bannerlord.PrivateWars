@@ -37,9 +37,12 @@ public interface IPrivateWarsApi
     /// Declares a new private war. Mirrors the inputs of the internal declare use case:
     /// the two principal clans, the casus belli (its persisted type discriminator and the contested
     /// title), the frozen main-goal settlement, the declaration-time fief ownership snapshot used to
-    /// revert captures on resolution, the campaign day of declaration, and the clans that joined
-    /// each side from outside the principals' vassal subtrees. Returns the resulting war, or null if
-    /// the declaration was rejected.
+    /// revert captures on resolution (pass every candidate fief; the war keeps those held by either
+    /// side, and any of them can be besieged), the campaign day of declaration, and the clans that joined
+    /// each side from outside the principals' vassal subtrees. Supporters also named in
+    /// <paramref name="foreignSupporters"/> come from outside the principals' kingdom and fight
+    /// alone, without their vassals. Returns the resulting war, or null if the declaration was
+    /// rejected.
     /// </summary>
     PrivateWarInfo? DeclareWar(
         string attackerClanId,
@@ -50,7 +53,15 @@ public interface IPrivateWarsApi
         IReadOnlyDictionary<string, string> fiefSnapshot,
         float startDay,
         IReadOnlyCollection<string> attackerSupporters,
-        IReadOnlyCollection<string> defenderSupporters);
+        IReadOnlyCollection<string> defenderSupporters,
+        IReadOnlyCollection<string>? foreignSupporters = null);
+
+    /// <summary>
+    /// Whether the clan fights on the attacker's side of the war, by its own pledge or through its
+    /// suzerain chain. Answers for a concluded war too, from the sides it was declared with. False
+    /// when no war with that id exists.
+    /// </summary>
+    bool IsOnAttackerSide(string warId, string clanId);
 
     /// <summary>
     /// Whether the attacker side of a war with these sides could besiege the main goal today: some

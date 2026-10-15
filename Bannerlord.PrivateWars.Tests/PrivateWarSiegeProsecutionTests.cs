@@ -6,6 +6,8 @@ namespace Bannerlord.PrivateWars.Tests;
 public class PrivateWarSiegeProsecutionTests
 {
     private readonly PrivateWarSiegeStrengthPolicy _strength = new();
+    private readonly PrivateWarSiegeFoodPolicy _food = new();
+    private readonly PrivateWarSiegeDistancePolicy _distance = new();
     private readonly PrivateWarSideLeaderSelector _selector = new();
 
     [Fact]
@@ -34,6 +36,35 @@ public class PrivateWarSiegeProsecutionTests
     }
 
     [Fact]
+    public void FoodGate_FullWeightWhenFed()
+        => Assert.Equal(1f, _food.GetScoreFactor(12, 12f, willGatherArmy: false));
+
+    [Fact]
+    public void FoodGate_ScalesDownAsFoodRunsOut()
+    {
+        Assert.Equal(0.55f, _food.GetScoreFactor(6, 12f, willGatherArmy: false), 3);
+        Assert.Equal(0.1f, _food.GetScoreFactor(0, 12f, willGatherArmy: false), 3);
+    }
+
+    [Fact]
+    public void FoodGate_RefusesToGatherAnArmyWhenShort()
+    {
+        Assert.Equal(0f, _food.GetScoreFactor(11, 12f, willGatherArmy: true));
+        Assert.Equal(1f, _food.GetScoreFactor(12, 12f, willGatherArmy: true));
+    }
+
+    [Fact]
+    public void DistanceGate_FallsOffLinearlyOverFiveTownSpacings()
+    {
+        Assert.Equal(1f, _distance.GetScoreFactor(0f, 40f), 3);
+        Assert.Equal(0.5f, _distance.GetScoreFactor(100f, 40f), 3);
+    }
+
+    [Fact]
+    public void DistanceGate_NeverDropsBelowFloor()
+        => Assert.Equal(0.1f, _distance.GetScoreFactor(1000f, 40f), 3);
+
+    [Fact]
     public void Selector_PrefersPrincipalWhenAvailable()
     {
         var leader = _selector.Select(new[]
@@ -59,7 +90,7 @@ public class PrivateWarSiegeProsecutionTests
     }
 
     [Fact]
-    public void Selector_KeepsExistingGoalArmyLeader()
+    public void Selector_KeepsExistingWarArmyLeader()
     {
         var leader = _selector.Select(new[]
         {
@@ -71,7 +102,7 @@ public class PrivateWarSiegeProsecutionTests
     }
 
     [Fact]
-    public void Selector_ActualBesiegerOutranksGoalArmyAndPrincipal()
+    public void Selector_ActualBesiegerOutranksWarArmyAndPrincipal()
     {
         var leader = _selector.Select(new[]
         {

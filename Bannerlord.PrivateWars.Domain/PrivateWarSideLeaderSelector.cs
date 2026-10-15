@@ -9,8 +9,8 @@ namespace Bannerlord.PrivateWars.Domain
         string ClanId,
         int ClanTier,
         float ClanRenown,
-        bool IsLeadingGoalArmy,
-        bool IsBesiegingGoal = false);
+        bool IsLeadingWarArmy,
+        bool IsBesiegingWarFief = false);
 
     /// <summary>
     /// Picks the one party per war side that prosecutes the goal; every other party of the side
@@ -22,8 +22,8 @@ namespace Bannerlord.PrivateWars.Domain
     {
         public string? Select(IEnumerable<PrivateWarLeaderCandidate> candidates, string principalClanId)
             => candidates
-                .OrderByDescending(c => c.IsBesiegingGoal)
-                .ThenByDescending(c => c.IsLeadingGoalArmy)
+                .OrderByDescending(c => c.IsBesiegingWarFief)
+                .ThenByDescending(c => c.IsLeadingWarArmy)
                 .ThenByDescending(c => c.ClanId == principalClanId)
                 .ThenByDescending(c => c.ClanTier)
                 .ThenByDescending(c => c.ClanRenown)

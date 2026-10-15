@@ -4,6 +4,8 @@ namespace Bannerlord.PrivateWars.Domain
 {
     public sealed class PrivateWarSyntheticCapturePolicy
     {
+        // Any fief the war is fought over - the goal, or one either side held at declaration - falls
+        // to an opposing besieger once its preparations complete.
         public WarSide? GetLosingSide(
             PrivateWar war,
             string settlementId,
@@ -14,7 +16,7 @@ namespace Bannerlord.PrivateWars.Domain
             WarSide? ownerSide)
         {
             if (war.Status != PrivateWarStatus.Active
-                || war.MainGoalSettlementId != settlementId
+                || !IsWarFief(war, settlementId)
                 || !preparationComplete
                 || isPlayerLed
                 || !hasUsableSiegeLeader
@@ -27,5 +29,8 @@ namespace Bannerlord.PrivateWars.Domain
 
             return ownerSide;
         }
+
+        public static bool IsWarFief(PrivateWar war, string settlementId)
+            => war.MainGoalSettlementId == settlementId || war.OriginalFiefOwners.ContainsKey(settlementId);
     }
 }

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Bannerlord.PrivateWars.Domain.Model
@@ -19,6 +20,9 @@ namespace Bannerlord.PrivateWars.Domain.Model
     /// GoalLastTakenDay is the epoch the fatigue term drifts from: it starts at declaration and
     /// resets to the current day whenever the main goal changes hands, so retaking the goal wipes
     /// the accumulated fatigue and the contest restarts its drift toward the new holder.
+    ///
+    /// ForeignSupporters names the supporters (of either side) whose clan was outside the
+    /// principals' kingdom at declaration. Each fights alone: its own vassals do not follow it in.
     /// </summary>
     public record PrivateWar(
         string Id,
@@ -34,5 +38,8 @@ namespace Bannerlord.PrivateWars.Domain.Model
         float Score,
         float StartDay,
         float GoalLastTakenDay,
-        PrivateWarStatus Status);
+        PrivateWarStatus Status)
+    {
+        public IReadOnlyCollection<string> ForeignSupporters { get; init; } = Array.Empty<string>();
+    }
 }
