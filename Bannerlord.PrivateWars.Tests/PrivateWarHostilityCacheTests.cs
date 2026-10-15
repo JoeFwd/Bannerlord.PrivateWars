@@ -114,6 +114,39 @@ public class PrivateWarHostilityCacheTests
     }
 
     [Fact]
+    public void ScoreUpdate_KeepsSidesOfTheWar()
+    {
+        var hierarchy = new VersionedHierarchy();
+        hierarchy.Links["vassal"] = "supporter";
+        var registry = Registry(hierarchy);
+        registry.Update(War() with { AttackerSupporters = new[] { "supporter" } });
+        Assert.True(registry.AreEnemies("vassal", "defender"));
+
+        registry.Update(registry.Get("war")! with { Score = 42, BattleScore = 7 });
+        registry.Update(War() with { AttackerSupporters = new[] { "supporter" }, Score = 43 });
+
+        Assert.True(registry.AreEnemies("vassal", "defender"));
+        Assert.True(registry.AreAllies("vassal", "attacker"));
+        Assert.Equal(1, hierarchy.Calls);
+    }
+
+    [Fact]
+    public void SupporterRemoval_RecomputesSides()
+    {
+        var hierarchy = new VersionedHierarchy();
+        hierarchy.Links["vassal"] = "supporter";
+        var registry = Registry(hierarchy);
+        registry.Update(War() with { AttackerSupporters = new[] { "supporter", "supporter" } });
+        Assert.True(registry.AreEnemies("vassal", "defender"));
+
+        registry.Update(War() with { AttackerSupporters = new[] { "supporter", "other" } });
+        Assert.True(registry.AreEnemies("vassal", "defender"));
+
+        registry.Update(War() with { AttackerSupporters = new[] { "other" } });
+        Assert.False(registry.AreEnemies("vassal", "defender"));
+    }
+
+    [Fact]
     public void ReplacingWarWithSameId_RecomputesPrincipalSides()
     {
         var hierarchy = new VersionedHierarchy();

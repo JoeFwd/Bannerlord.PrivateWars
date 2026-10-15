@@ -21,7 +21,7 @@ namespace Bannerlord.PrivateWars.Registry
         private readonly WarSideResolver _sideResolver;
         private readonly ISuzerainProvider _hierarchy;
         private readonly object _sync = new();
-        private readonly Dictionary<(string WarId, string ClanId), WarSide?> _sides = new();
+        private readonly Dictionary<string, Dictionary<string, WarSide?>> _sidesByWar = new();
         private readonly Dictionary<string, string?> _suzerains = new();
         private long? _hierarchyRevision;
 
@@ -34,7 +34,7 @@ namespace Bannerlord.PrivateWars.Registry
                 {
                     lock (_sync)
                     {
-                        _sides.Clear();
+                        _sidesByWar.Clear();
                         _suzerains.Clear();
                         _hierarchyRevision = null;
                     }
@@ -84,7 +84,7 @@ namespace Bannerlord.PrivateWars.Registry
             lock (_sync)
             {
                 _warsById[war.Id] = war;
-                _sides.Clear();
+                _sidesByWar.Remove(war.Id);
             }
             Changed?.Invoke();
         }
@@ -93,8 +93,10 @@ namespace Bannerlord.PrivateWars.Registry
         {
             lock (_sync)
             {
+                // The daily score update keeps the war's sides; only a change of who fights drops them.
+                if (!_warsById.TryGetValue(war.Id, out var stored) || !HaveSameSides(stored, war))
+                    _sidesByWar.Remove(war.Id);
                 _warsById[war.Id] = war;
-                _sides.Clear();
             }
             Changed?.Invoke();
         }
@@ -104,7 +106,7 @@ namespace Bannerlord.PrivateWars.Registry
             lock (_sync)
             {
                 _warsById.Remove(id);
-                _sides.Clear();
+                _sidesByWar.Remove(id);
             }
             Changed?.Invoke();
         }
@@ -116,7 +118,7 @@ namespace Bannerlord.PrivateWars.Registry
                 _warsById.Clear();
                 foreach (var war in wars)
                     _warsById[war.Id] = war;
-                _sides.Clear();
+                _sidesByWar.Clear();
                 _suzerains.Clear();
                 _hierarchyRevision = null;
             }
@@ -211,7 +213,7 @@ namespace Bannerlord.PrivateWars.Registry
             var revision = (_hierarchy as IVersionedSuzerainProvider)?.Revision;
             if (revision != _hierarchyRevision)
             {
-                _sides.Clear();
+                _sidesByWar.Clear();
                 _suzerains.Clear();
                 _hierarchyRevision = revision;
             }
@@ -221,14 +223,29 @@ namespace Bannerlord.PrivateWars.Registry
         private WarSide? ResolveSide(string clanId, PrivateWar war, bool cache)
         {
             if (!cache) return _sideResolver.ResolveSide(clanId, war, _hierarchy.GetSuzerain);
-            var key = (war.Id, clanId);
-            if (!_sides.TryGetValue(key, out var side))
+            if (!_sidesByWar.TryGetValue(war.Id, out var sides))
+            {
+                sides = new Dictionary<string, WarSide?>();
+                _sidesByWar[war.Id] = sides;
+            }
+            if (!sides.TryGetValue(clanId, out var side))
             {
                 side = _sideResolver.ResolveSide(clanId, war, GetCachedSuzerain);
-                _sides[key] = side;
+                sides[clanId] = side;
             }
             return side;
         }
+
+        // Exactly the fields WarSideResolver reads.
+        private static bool HaveSameSides(PrivateWar a, PrivateWar b)
+            => a.AttackerPrincipalClanId == b.AttackerPrincipalClanId
+               && a.DefenderPrincipalClanId == b.DefenderPrincipalClanId
+               && HaveSameClans(a.AttackerSupporters, b.AttackerSupporters)
+               && HaveSameClans(a.DefenderSupporters, b.DefenderSupporters)
+               && HaveSameClans(a.ForeignSupporters, b.ForeignSupporters);
+
+        private static bool HaveSameClans(IReadOnlyCollection<string> a, IReadOnlyCollection<string> b)
+            => ReferenceEquals(a, b) || a.All(b.Contains) && b.All(a.Contains);
 
         private string? GetCachedSuzerain(string clanId)
         {
