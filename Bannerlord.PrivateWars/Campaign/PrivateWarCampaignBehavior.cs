@@ -125,10 +125,13 @@ namespace Bannerlord.PrivateWars.Campaign
             => army?.LeaderParty is not null && _warArmyLeaders.ContainsValue(army.LeaderParty.StringId);
 
         public bool IsActiveWarArmy(Army army)
-            => army.LeaderParty is { } leader
-               && _warArmyLeaders.Any(entry => entry.Value == leader.StringId
-                                               && _privateWars.GetAll().Any(w => w.Id == entry.Key.WarId
-                                                                                  && w.Status == PrivateWarStatus.Active));
+        {
+            if (army.LeaderParty is not { } leader) return false;
+            var activeWarIds = new HashSet<string>(_privateWars.GetAll()
+                .Where(w => w.Status == PrivateWarStatus.Active)
+                .Select(w => w.Id));
+            return _warArmyLeaders.Any(entry => entry.Value == leader.StringId && activeWarIds.Contains(entry.Key.WarId));
+        }
 
         private void OnPartyJoinedArmy(MobileParty party)
         {
@@ -149,6 +152,8 @@ namespace Bannerlord.PrivateWars.Campaign
             if (!IsWarArmy(army)) return;
             _logger.LogDebug("[PW] war army {Leader} dispersed: {Reason} cohesion={Cohesion:0} parties={Count}",
                 army.LeaderParty.StringId, reason, army.Cohesion, army.Parties.Count);
+            foreach (var key in _warArmyLeaders.Where(e => e.Value == army.LeaderParty.StringId).Select(e => e.Key).ToList())
+                _warArmyLeaders.Remove(key);
         }
 
         public override void SyncData(IDataStore dataStore)
@@ -182,13 +187,14 @@ namespace Bannerlord.PrivateWars.Campaign
         {
             VetoSameKingdomSiegeRelief(mobileParty, p);
 
-            foreach (var (war, side) in FindPrivateWarSidesFor(mobileParty))
+            var wars = FindPrivateWarSidesFor(mobileParty).ToList();
+            var leadsRaisedWarArmy = false;
+            foreach (var (war, side) in wars)
             {
                 var targets = FindTargets(mobileParty, war, side);
                 if (targets.Count == 0 || !IsDesignatedSideLeader(mobileParty, war, side)) continue;
 
-                if (IsLeadingRaisedWarArmy(mobileParty, war, side))
-                    VetoOtherSiegeAndRaidTargets(p, war);
+                leadsRaisedWarArmy |= IsLeadingRaisedWarArmy(mobileParty, war, side);
 
                 var armyMembers = mobileParty.Army == null ? GetPrivateWarArmyMembers(mobileParty, war, side) : null;
                 float soloStrength = mobileParty.GetTotalLandStrengthWithFollowers();
@@ -226,6 +232,9 @@ namespace Bannerlord.PrivateWars.Campaign
                         * food * distance);
                 }
             }
+
+            if (leadsRaisedWarArmy)
+                VetoOtherSiegeAndRaidTargets(p, wars.Select(entry => entry.War).ToList());
         }
 
         private float GetDistanceScoreFactor(MobileParty mobileParty, Settlement target)
@@ -284,14 +293,15 @@ namespace Bannerlord.PrivateWars.Campaign
         // The war bid is only one vote in the engine's behaviour selection, so a war army was redirected
         // to the realm's war within seconds of forming (observed: Mackinnon's army raised against Foulis
         // went to besiege Kilchurn). An army raised for the feud keeps to the war's fiefs; defending fiefs
-        // is left alone.
-        private void VetoOtherSiegeAndRaidTargets(PartyThinkParams p, PrivateWar war)
+        // is left alone. A fief of any war the party fights in stays open, so one war's veto never zeroes
+        // the bids another of its wars just added.
+        private void VetoOtherSiegeAndRaidTargets(PartyThinkParams p, IReadOnlyList<PrivateWar> wars)
         {
             List<AIBehaviorData>? vetoed = null;
             foreach (var (behaviour, score) in p.AIBehaviorScores)
             {
                 if (behaviour.AiBehavior != AiBehavior.BesiegeSettlement && behaviour.AiBehavior != AiBehavior.RaidSettlement) continue;
-                if (score <= 0f || behaviour.Party is Settlement target && IsWarFief(war, target)) continue;
+                if (score <= 0f || behaviour.Party is Settlement target && wars.Any(war => IsWarFief(war, target))) continue;
 
                 (vetoed ??= new List<AIBehaviorData>()).Add(behaviour);
             }
@@ -299,7 +309,8 @@ namespace Bannerlord.PrivateWars.Campaign
             if (vetoed is null) return;
             foreach (var behaviour in vetoed)
                 p.SetBehaviorScore(behaviour, 0f);
-            _logger.LogDebug("[PW] war army {Leader} held on {War}; vetoed [{Vetoed}]", p.MobilePartyOf.StringId, war.Id,
+            _logger.LogDebug("[PW] war army {Leader} held on {Wars}; vetoed [{Vetoed}]", p.MobilePartyOf.StringId,
+                string.Join(",", wars.Select(war => war.Id)),
                 string.Join(",", vetoed.Select(behaviour => $"{behaviour.AiBehavior}:{(behaviour.Party as Settlement)?.StringId}")));
         }
 
@@ -832,9 +843,10 @@ namespace Bannerlord.PrivateWars.Campaign
         // share a kingdom, that premise is void and a stale Active record would keep forcing
         // cross-kingdom hostility; conclude it. Subtree vassals need no handling - WarSideResolver
         // re-resolves their side from the current suzerain chain on every query.
-        // A war goal changing hands - by our capture path or any engine path - resets the fatigue epoch:
+        // A war goal changing sides - by our capture path or any engine path - resets the fatigue epoch:
         // the accumulated drift toward the previous holder is wiped and the contest restarts its climb
-        // toward the new holder, whoever that is.
+        // toward the new holder. A move between clans of the same side (a kingdom grant, a gift between
+        // allies) leaves it alone.
         // Diagnostic: a war goal changing hands outside our own capture path (observed: Kenilworth went
         // to an uninvolved clan a day after the attacker took it). The stack trace names the engine path.
         private void OnSettlementOwnerChanged(
@@ -847,9 +859,16 @@ namespace Bannerlord.PrivateWars.Campaign
         {
             if (settlement is null) return;
 
+            var oldClanId = oldOwner?.Clan?.StringId;
+            var newClanId = newOwner?.Clan?.StringId;
+
             foreach (var war in _privateWars.Snapshot())
             {
                 if (war.Status != PrivateWarStatus.Active || war.MainGoalSettlementId != settlement.StringId) continue;
+
+                var oldSide = oldClanId is null ? null : ResolveSide(oldClanId, war);
+                var newSide = newClanId is null ? null : ResolveSide(newClanId, war);
+                if (oldSide == newSide) continue;
 
                 _privateWars.Update(war with { GoalLastTakenDay = (float)CampaignTime.Now.ToDays });
             }
@@ -1113,9 +1132,12 @@ namespace Bannerlord.PrivateWars.Campaign
 
         // Apply the terminal outcome to engine state: revert each captured fief to its pre-war owner.
         // On attacker victory the resolution leaves the main goal with the attacker as the prize, and
-        // takes it off any ally or vassal of his who holds it; the dignity transfer rides in on the
-        // change of owner (FeudalTitleCampaignBehavior.OnSettlementOwnerChanged), so it is not repeated
-        // here. The war record is marked concluded.
+        // takes it off any ally or vassal of his who holds it. The war record is marked concluded and
+        // WarResolved is raised BEFORE that hand-over: a consumer that awards the dignity itself (a
+        // title-aware one) then still sees the loser holding the goal and treats the war as won. A plain
+        // change of owner would otherwise reach it first as an administrative transfer, and the win
+        // would read as already settled. The hand-over afterwards only covers what the consumer did not
+        // move; it is a no-op once the goal is already the winner's.
         private void ResolveWar(PrivateWar war, PrivateWarOutcome outcome)
         {
             // A village's owner is its bound castle's or town's, so it changes hands and reverts with it;
@@ -1146,6 +1168,17 @@ namespace Bannerlord.PrivateWars.Campaign
                 ChangeOwnerOfSettlementAction.ApplyByDefault(hero, settlement);
             }
 
+            var concludedWar = war with { Status = PrivateWarStatus.Concluded };
+            _privateWars.Update(concludedWar);
+            foreach (var key in _warArmyLeaders.Keys.Where(k => k.WarId == war.Id).ToList())
+                _warArmyLeaders.Remove(key);
+            ReleaseWarPrisoners(war);
+
+            InfoPrinter.Display(
+                $"Private war concluded: {war.AttackerPrincipalClanId} vs {war.DefenderPrincipalClanId} - {outcome}.");
+
+            WarResolved?.Invoke(concludedWar, outcome);
+
             if (plan.Prize is { HandOverSettlement: true } prize)
             {
                 var goal = Settlement.Find(prize.SettlementId);
@@ -1156,15 +1189,6 @@ namespace Bannerlord.PrivateWars.Campaign
                 if (goal is not null && leader is not null && goal.OwnerClan != principal)
                     ChangeOwnerOfSettlementAction.ApplyByDefault(leader, goal);
             }
-
-            var concludedWar = war with { Status = PrivateWarStatus.Concluded };
-            _privateWars.Update(concludedWar);
-            ReleaseWarPrisoners(war);
-
-            InfoPrinter.Display(
-                $"Private war concluded: {war.AttackerPrincipalClanId} vs {war.DefenderPrincipalClanId} - {outcome}.");
-
-            WarResolved?.Invoke(concludedWar, outcome);
         }
 
         // Which side of this war a clan fights on, walking up its suzerain chain to the nearest principal.

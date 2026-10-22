@@ -64,6 +64,13 @@ public interface IPrivateWarsApi
     bool IsOnAttackerSide(string warId, string clanId);
 
     /// <summary>
+    /// The clan that held the town or castle when the war was declared, from the snapshot taken then.
+    /// Answers for a concluded war too. Null when no war with that id exists or the snapshot holds no
+    /// such settlement.
+    /// </summary>
+    string? GetPreWarOwnerClanId(string warId, string settlementId);
+
+    /// <summary>
     /// Whether the attacker side of a war with these sides could besiege the main goal today: some
     /// party on it can lead a private-war army that beats the goal's walled defence. Check before
     /// <see cref="DeclareWar"/> so a clan does not declare a war it cannot fight. The attacker may be

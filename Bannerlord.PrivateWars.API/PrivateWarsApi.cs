@@ -141,6 +141,12 @@ internal sealed class PrivateWarsApi : IPrivateWarsApi
         return war != null && sides != null && sides.ResolveSide(clanId, war) == WarSide.Attacker;
     }
 
+    public string? GetPreWarOwnerClanId(string warId, string settlementId)
+    {
+        var war = _repositoryResolver()?.Get(warId);
+        return war != null && war.OriginalFiefOwners.TryGetValue(settlementId, out var clanId) ? clanId : null;
+    }
+
     public bool CanProsecute(
         string attackerClanId,
         string defenderClanId,
