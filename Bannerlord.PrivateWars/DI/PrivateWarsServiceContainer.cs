@@ -68,6 +68,9 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<PrivateWarArmyDecisionAdapter>();
             services.AddSingleton<WarArmyLeaders>();
             services.AddSingleton<SiegeCaptureAdapter>();
+            services.AddSingleton<WarPrisonerReleaseAdapter>();
+            services.AddSingleton<WarConclusionAdapter>();
+            services.AddSingleton<KingdomSplitWarAdapter>();
 
             // The live-state resolution seam behind IPrivateWarsApi.ResolveWar, exposed as a game-free
             // port so the API can route through it.

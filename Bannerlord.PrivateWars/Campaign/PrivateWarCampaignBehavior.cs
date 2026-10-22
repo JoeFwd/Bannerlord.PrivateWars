@@ -59,7 +59,8 @@ namespace Bannerlord.PrivateWars.Campaign
         private readonly IPrivateWarSidesProvider _sides;
         private readonly IPrivateWarHostility _hostility;
         private readonly PrivateWarArmyDecisionAdapter _armyDecisionAdapter;
-        private readonly WarResolutionAdapter _warResolution;
+        private readonly WarConclusionAdapter _warConclusion;
+        private readonly KingdomSplitWarAdapter _kingdomSplit;
         private readonly SiegeCaptureAdapter _siegeCapture;
         private readonly WarArmyLeaders _warArmyLeaders;
         private readonly PrivateWarSiegeStrengthPolicy _siegeStrengthPolicy;
@@ -77,7 +78,8 @@ namespace Bannerlord.PrivateWars.Campaign
             IPrivateWarSidesProvider sides,
             IPrivateWarHostility hostility,
             PrivateWarArmyDecisionAdapter armyDecisionAdapter,
-            WarResolutionAdapter warResolution,
+            WarConclusionAdapter warConclusion,
+            KingdomSplitWarAdapter kingdomSplit,
             SiegeCaptureAdapter siegeCapture,
             WarArmyLeaders warArmyLeaders,
             PrivateWarSiegeStrengthPolicy siegeStrengthPolicy,
@@ -97,7 +99,8 @@ namespace Bannerlord.PrivateWars.Campaign
             _sides = sides;
             _hostility = hostility;
             _armyDecisionAdapter = armyDecisionAdapter;
-            _warResolution = warResolution;
+            _warConclusion = warConclusion;
+            _kingdomSplit = kingdomSplit;
             _siegeCapture = siegeCapture;
             _warArmyLeaders = warArmyLeaders;
         }
@@ -631,7 +634,7 @@ namespace Bannerlord.PrivateWars.Campaign
                 LogWarDiagnosis(scored, observations);
 
                 if (result.Outcome is { } outcome)
-                    _warResolution.Resolve(scored, outcome);
+                    _warConclusion.Conclude(scored, outcome);
                 else
                     _privateWars.Update(scored);
             }
@@ -831,7 +834,7 @@ namespace Bannerlord.PrivateWars.Campaign
                 oldKingdom?.Leader is { } oldRuler && clan.Leader != null ? clan.Leader.GetRelation(oldRuler) : (int?)null,
                 new System.Diagnostics.StackTrace(1, false));
 
-            _warResolution.ConcludeWarsSplitByKingdomChange(clan);
+            _kingdomSplit.ConcludeWarsSplitBy(clan);
         }
 
         // When a battle resolves between the two sides of an active private war, bump that war's
