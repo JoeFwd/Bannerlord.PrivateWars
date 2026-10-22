@@ -56,16 +56,6 @@ namespace Bannerlord.PrivateWars.Registry
                 .ToList();
         }
 
-        public IReadOnlyList<PrivateWar> GetByDefender(string defenderPrincipalClanId)
-        {
-            lock (_sync) return _warsById.Values.Where(w => w.DefenderPrincipalClanId == defenderPrincipalClanId).ToList();
-        }
-
-        public IReadOnlyList<PrivateWar> GetByTitle(string titleId)
-        {
-            lock (_sync) return _warsById.Values.Where(w => w.TitleId == titleId).ToList();
-        }
-
         public IReadOnlyList<PrivateWar> GetByClan(string principalClanId)
         {
             lock (_sync) return _warsById.Values
@@ -125,8 +115,6 @@ namespace Bannerlord.PrivateWars.Registry
 
             Changed?.Invoke();
         }
-
-        public IReadOnlyList<PrivateWar> Snapshot() => GetAll();
 
         public bool AreEnemies(string clanIdA, string clanIdB)
         {
