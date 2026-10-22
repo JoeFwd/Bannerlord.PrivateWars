@@ -66,11 +66,16 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<PrivateWarSiegeDistancePolicy>();
             services.AddSingleton<PrivateWarSideLeaderSelector>();
             services.AddSingleton<PrivateWarArmyDecisionAdapter>();
+            services.AddSingleton<WarArmyLeaders>();
+            services.AddSingleton<SiegeCaptureAdapter>();
 
-            // Campaign behaviour (persistence lifecycle). Also the live-state resolution seam behind
-            // IPrivateWarsApi.ResolveWar, exposed as a game-free port so the API can route through it.
+            // The live-state resolution seam behind IPrivateWarsApi.ResolveWar, exposed as a game-free
+            // port so the API can route through it.
+            services.AddSingleton<WarResolutionAdapter>();
+            services.AddSingleton<IResolvePrivateWarByIdUseCase>(sp => sp.GetRequiredService<WarResolutionAdapter>());
+
+            // Campaign behaviour (persistence lifecycle).
             services.AddSingleton<PrivateWarCampaignBehavior>();
-            services.AddSingleton<IResolvePrivateWarByIdUseCase>(sp => sp.GetRequiredService<PrivateWarCampaignBehavior>());
             services.AddSingleton<IAssessPrivateWarProsecutionUseCase>(sp => sp.GetRequiredService<PrivateWarCampaignBehavior>());
 
             // Game models (resolved lazily in the SubModule)

@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Bannerlord.PrivateWars.Domain.Model;
 
 namespace Bannerlord.PrivateWars.Domain
@@ -32,5 +34,8 @@ namespace Bannerlord.PrivateWars.Domain
 
         public static bool IsWarFief(PrivateWar war, string settlementId)
             => war.MainGoalSettlementId == settlementId || war.OriginalFiefOwners.ContainsKey(settlementId);
+
+        public static IEnumerable<string> WarFiefIds(PrivateWar war)
+            => war.OriginalFiefOwners.Keys.Append(war.MainGoalSettlementId).Distinct();
     }
 }
