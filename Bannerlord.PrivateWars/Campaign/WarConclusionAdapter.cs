@@ -21,7 +21,6 @@ namespace Bannerlord.PrivateWars.Campaign
         private readonly IPrivateWarRepository _privateWars;
         private readonly IResolvePrivateWarUseCase _resolvePrivateWar;
         private readonly IPrivateWarSidesProvider _sides;
-        private readonly WarArmyLeaders _warArmyLeaders;
         private readonly WarPrisonerReleaseAdapter _prisonerRelease;
         private readonly ILogger<WarConclusionAdapter> _logger;
 
@@ -32,14 +31,12 @@ namespace Bannerlord.PrivateWars.Campaign
             IPrivateWarRepository privateWars,
             IResolvePrivateWarUseCase resolvePrivateWar,
             IPrivateWarSidesProvider sides,
-            WarArmyLeaders warArmyLeaders,
             WarPrisonerReleaseAdapter prisonerRelease,
             ILogger<WarConclusionAdapter> logger)
         {
             _privateWars = privateWars;
             _resolvePrivateWar = resolvePrivateWar;
             _sides = sides;
-            _warArmyLeaders = warArmyLeaders;
             _prisonerRelease = prisonerRelease;
             _logger = logger;
         }
@@ -84,7 +81,6 @@ namespace Bannerlord.PrivateWars.Campaign
 
             var concludedWar = war with { Status = PrivateWarStatus.Concluded };
             _privateWars.Update(concludedWar);
-            _warArmyLeaders.ForgetWar(war.Id);
             _prisonerRelease.Release(war);
 
             InfoPrinter.Display(
@@ -99,8 +95,21 @@ namespace Bannerlord.PrivateWars.Campaign
                 var leader = principal is null || principal.IsEliminated
                     ? null
                     : principal.Leader ?? principal.Heroes.FirstOrDefault();
-                if (goal is not null && leader is not null && goal.OwnerClan != principal)
-                    ChangeOwnerOfSettlementAction.ApplyByDefault(leader, goal);
+                if (goal is not null && leader is not null)
+                {
+                    string previousOwner = goal.OwnerClan?.StringId ?? "none";
+                    if (goal.OwnerClan == principal)
+                    {
+                        _logger.LogInformation("[PW] {War} prize: goal {Settlement} (title {Title}) skipped, already held by principal {Principal}",
+                            war.Id, prize.SettlementId, prize.TitleId, prize.NewHolderClanId);
+                    }
+                    else
+                    {
+                        ChangeOwnerOfSettlementAction.ApplyByDefault(leader, goal);
+                        _logger.LogInformation("[PW] {War} prize: goal {Settlement} (title {Title}) owner {PreviousOwner} -> principal {Principal}",
+                            war.Id, prize.SettlementId, prize.TitleId, previousOwner, prize.NewHolderClanId);
+                    }
+                }
             }
         }
     }

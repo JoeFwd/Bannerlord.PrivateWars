@@ -275,12 +275,12 @@ namespace Bannerlord.PrivateWars.Cheats
             return $"{clan.StringId} joined {kingdom.StringId}; now MapFaction={clan.MapFaction?.StringId ?? "?"}.";
         }
 
-        // TEMP: deterministically stage a same-kingdom siege so the capture loop
-        // (IsPreparationComplete -> TryCaptureCompletedSieges) can be verified without waiting on AI
-        // pathing. Teleports the besieger clan's leader party to the goal's gate and orders a besiege;
-        // the engine starts the siege camp on the next tick and the private-war hold-score keeps it
-        // camped. Capture fires on PREPARATION complete (a timer), not assault, so a lone party suffices.
-        // Advance ~1 day, then read list_private_wars / settlement owner to confirm the flip.
+        // TEMP: deterministically stage a same-kingdom siege so the assault loop can be verified without
+        // waiting on AI pathing. Teleports the besieger clan's leader party to the goal's gate and orders a
+        // besiege; the engine starts the siege camp on the next tick and the private-war hold-score keeps it
+        // camped. Once preparations complete the AI assaults only if it out-strengths the defenders
+        // (BesiegerCamp.IsReadyToBesiege), so a lone party may sit outside a strong garrison.
+        // Advance time, then read list_private_wars / settlement owner to confirm the flip.
         [CommandLineFunctionality.CommandLineArgumentFunction("force_besiege", "campaign")]
         public static string ForceBesiege(List<string> args)
         {
@@ -305,15 +305,14 @@ namespace Bannerlord.PrivateWars.Cheats
             party.SetMoveBesiegeSettlement(settlement, MobileParty.NavigationType.Default);
 
             return $"Teleported {party.StringId} ({besiegerClan.StringId}) to {settlement.StringId}'s gate " +
-                   "and ordered a besiege. Advance time ~1 day; capture fires on preparation complete.";
+                   "and ordered a besiege. Advance time; the AI assaults once preparations complete.";
         }
 
-        // TEMP: jump an active siege's preparation straight to complete so the capture trigger
-        // (TryCaptureCompletedSieges, which fires on IsPreparationComplete) can be observed within one
-        // hourly tick. Preparation construction speed scales with the BESIEGER's man-day power (not the
-        // garrison), so a lone party would otherwise take many in-game days; this isolates the capture
-        // path from vanilla construction speed. Run after force_besiege has formed the camp; advance ~1
-        // hour, then read settlement owner / list_private_wars to confirm the ownership flip.
+        // TEMP: jump an active siege's preparation straight to complete so the AI assault (which waits on
+        // IsPreparationComplete) can be observed quickly. Preparation construction speed scales with the
+        // BESIEGER's man-day power (not the garrison), so a lone party would otherwise take many in-game
+        // days. Run after force_besiege has formed the camp; advance a few hours, then read settlement
+        // owner / list_private_wars to confirm the assault and ownership flip.
         [CommandLineFunctionality.CommandLineArgumentFunction("complete_siege_prep", "campaign")]
         public static string CompleteSiegePrep(List<string> args)
         {

@@ -56,18 +56,12 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<IResolvePrivateWarUseCase, ResolvePrivateWarUseCase>();
 
             // Policies and adapters
-            services.AddSingleton<PrivateWarArmyPolicy>();
             services.AddSingleton<PrivateWarInteractionPolicy>();
             services.AddSingleton<PrivateWarCaptivityPolicy>();
             services.AddSingleton<PrivateWarSallyOutPolicy>();
-            services.AddSingleton<PrivateWarSyntheticCapturePolicy>();
-            services.AddSingleton<PrivateWarSiegeStrengthPolicy>();
-            services.AddSingleton<PrivateWarSiegeFoodPolicy>();
-            services.AddSingleton<PrivateWarSiegeDistancePolicy>();
-            services.AddSingleton<PrivateWarSideLeaderSelector>();
-            services.AddSingleton<PrivateWarArmyDecisionAdapter>();
-            services.AddSingleton<WarArmyLeaders>();
-            services.AddSingleton<SiegeCaptureAdapter>();
+            services.AddSingleton<PrivateWarAllegiancePolicy>();
+            services.AddSingleton<PrivateWarObservationsReader>();
+            services.AddSingleton<PrivateWarFronts>();
             services.AddSingleton<WarPrisonerReleaseAdapter>();
             services.AddSingleton<WarConclusionAdapter>();
             services.AddSingleton<KingdomSplitWarAdapter>();
@@ -77,12 +71,16 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<WarResolutionAdapter>();
             services.AddSingleton<IResolvePrivateWarByIdUseCase>(sp => sp.GetRequiredService<WarResolutionAdapter>());
 
-            // Campaign behaviour (persistence lifecycle).
+            // Campaign behaviours: persistence lifecycle, lords' feud-or-crown choice, battle score,
+            // same-kingdom siege relief veto and the debug trace.
             services.AddSingleton<PrivateWarCampaignBehavior>();
-            services.AddSingleton<IAssessPrivateWarProsecutionUseCase>(sp => sp.GetRequiredService<PrivateWarCampaignBehavior>());
+            services.AddSingleton<PrivateWarAllegianceCampaignBehavior>();
+            services.AddSingleton<PrivateWarBattleScoreCampaignBehavior>();
+            services.AddSingleton<PrivateWarSiegeReliefVetoCampaignBehavior>();
+            services.AddSingleton<PrivateWarDiagnosticsCampaignBehavior>();
+            services.AddSingleton<IAssessPrivateWarProsecutionUseCase, PrivateWarProsecutionAssessor>();
 
             // Game models (resolved lazily in the SubModule)
-            services.AddTransient<PrivateWarTargetScoreCalculatingModel>();
             services.AddTransient<PrivateWarArmyManagementCalculationModel>();
             services.AddTransient<PrivateWarEncounterModel>();
             services.AddTransient<PrivateWarVolunteerModel>();
@@ -103,7 +101,14 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<IPatch, MapEventUpdateExitPrivateWarScopePatch>();
             services.AddSingleton<IPatch, KingdomIsAtWarWithPrivateWarPatch>();
             services.AddSingleton<IPatch, CanPartyJoinBattlePatch>();
-            services.AddSingleton<IPatch, KingdomCreateArmyPatch>();
+            // Real wall assaults for AI besiegers, won fiefs to the war's interim owner
+            services.AddSingleton<IPatch, PrivateWarAssaultGateArmPatch>();
+            services.AddSingleton<IPatch, PrivateWarAssaultGateDisarmPatch>();
+            services.AddSingleton<IPatch, PrivateWarAssaultGateAnswerPatch>();
+            services.AddSingleton<IPatch, PrivateWarSiegeOwnerPatch>();
+            // The feud as a virtual kingdom for vanilla's siege planner
+            services.AddSingleton<IPatch, PrivateWarSiegeTargetsPatch>();
+            services.AddSingleton<IPatch, PrivateWarFrontierScorePatch>();
             services.AddSingleton<IPatch, WarArmyNoActiveWarDispersalPatch>();
             services.AddSingleton<IPatch, PrivateWarPrisonerRetentionPatch>();
             services.AddSingleton<IPatch, RecruitmentEntryPatch>();
@@ -111,6 +116,7 @@ namespace Bannerlord.PrivateWars.DI
             // Player-facing encounter setup and siege defender join (safe to apply early)
             services.AddSingleton<IPatch, PlayerEncounterSetupFieldsPatch>();
             services.AddSingleton<IPatch, SiegeDefenderJoinPatch>();
+            services.AddSingleton<IPatch, PlayerSiegeJoinPatch>();
             // Field-encounter dialog: open the enemy conversation for a same-kingdom rival
             services.AddSingleton<IPatch, PlayerIsEnemyTagPatch>();
             services.AddSingleton<IPatch, WillLordAttackPrivateWarPatch>();

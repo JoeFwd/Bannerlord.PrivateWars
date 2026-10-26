@@ -37,11 +37,11 @@ namespace Bannerlord.PrivateWars.Patches
             var otherSide = side == BattleSideEnum.Attacker ? __instance.DefenderSide : __instance.AttackerSide;
 
             bool otherSideHasEnemy = otherSide.Parties.Any(x =>
-                x.Party.IsActive && PrivateWarPatchHelper.AreEnemies(joinerClan, x.Party.MobileParty?.ActualClan));
+                x.Party.IsActive && PrivateWarPatchHelper.AreEnemies(joinerClan, PrivateWarPatchHelper.ClanOf(x.Party)));
             if (!otherSideHasEnemy) return;
 
             bool requestedSideHasEnemy = requestedSide.Parties.Any(x =>
-                x.Party.IsActive && PrivateWarPatchHelper.AreEnemies(joinerClan, x.Party.MobileParty?.ActualClan));
+                x.Party.IsActive && PrivateWarPatchHelper.AreEnemies(joinerClan, PrivateWarPatchHelper.ClanOf(x.Party)));
             if (requestedSideHasEnemy) return;
 
             __result = true;

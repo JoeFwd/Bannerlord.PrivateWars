@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Bannerlord.PrivateWars.Domain.Model
 {
@@ -41,5 +42,12 @@ namespace Bannerlord.PrivateWars.Domain.Model
         PrivateWarStatus Status)
     {
         public IReadOnlyCollection<string> ForeignSupporters { get; init; } = Array.Empty<string>();
+
+        // The fiefs a war is fought over: the goal, or one either side held at declaration.
+        public bool IsWarFief(string settlementId)
+            => MainGoalSettlementId == settlementId || OriginalFiefOwners.ContainsKey(settlementId);
+
+        public IEnumerable<string> WarFiefIds()
+            => OriginalFiefOwners.Keys.Append(MainGoalSettlementId).Distinct();
     }
 }

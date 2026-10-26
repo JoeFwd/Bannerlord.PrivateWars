@@ -11,11 +11,10 @@ namespace Bannerlord.PrivateWars.Patches
     // private-war battle StartPartyEncounterBattlePatch starts is finished on its first tick with no
     // winner; the AI then re-engages on the next tick, forever, and the battle never scores.
     //
-    // While Update runs for a battle whose two leaders are mobile parties of private-war enemy clans in
-    // one kingdom, open a scope that KingdomIsAtWarWithPrivateWarPatch reads to report that kingdom at war
-    // with itself. Fortification battles (leader is a settlement party) are deliberately left out: the
-    // same-kingdom siege flow captures synthetically (PrivateWarCampaignBehavior.TryCaptureCompletedSieges)
-    // and relies on no assault MapEvent ever resolving.
+    // While Update runs for a battle whose two leaders belong to private-war enemy clans in one kingdom,
+    // open a scope that KingdomIsAtWarWithPrivateWarPatch reads to report that kingdom at war with itself.
+    // A fortification battle (wall assault, sally-out) has a settlement party as one leader; its clan is
+    // the settlement's owner.
     internal static class PrivateWarBattleScope
     {
         public static IFaction? Faction;
@@ -24,10 +23,11 @@ namespace Bannerlord.PrivateWars.Patches
         {
             var attacker = mapEvent.AttackerSide?.LeaderParty;
             var defender = mapEvent.DefenderSide?.LeaderParty;
-            if (attacker?.MobileParty is null || defender?.MobileParty is null) return null;
+            if (attacker is null || defender is null) return null;
             if (attacker.MapFaction is null || attacker.MapFaction != defender.MapFaction) return null;
 
-            return PrivateWarPatchHelper.AreEnemies(attacker.MobileParty.ActualClan, defender.MobileParty.ActualClan)
+            return PrivateWarPatchHelper.AreEnemies(
+                    PrivateWarPatchHelper.ClanOf(attacker), PrivateWarPatchHelper.ClanOf(defender))
                 ? attacker.MapFaction
                 : null;
         }

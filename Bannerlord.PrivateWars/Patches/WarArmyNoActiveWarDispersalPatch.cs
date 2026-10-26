@@ -13,11 +13,11 @@ namespace Bannerlord.PrivateWars.Patches
     // lords too broke to call any army once the realm's war resumed). Keep a war army of an active war.
     public class WarArmyNoActiveWarDispersalPatch : IPatch
     {
-        private static PrivateWarCampaignBehavior _campaignBehavior = null!;
+        private static PrivateWarFronts _fronts = null!;
 
-        public WarArmyNoActiveWarDispersalPatch(PrivateWarCampaignBehavior campaignBehavior)
+        public WarArmyNoActiveWarDispersalPatch(PrivateWarFronts fronts)
         {
-            _campaignBehavior = campaignBehavior;
+            _fronts = fronts;
         }
 
         public MethodInfo TargetMethod => PrivateWarHarmonyPatchTargets.DisbandArmyInternal();
@@ -28,6 +28,6 @@ namespace Bannerlord.PrivateWars.Patches
         public PatchType PatchType => PatchType.Prefix;
 
         private static bool Prefix(Army army, Army.ArmyDispersionReason reason) =>
-            reason != Army.ArmyDispersionReason.NoActiveWar || !_campaignBehavior.IsActiveWarArmy(army);
+            reason != Army.ArmyDispersionReason.NoActiveWar || !_fronts.IsActiveWarArmy(army);
     }
 }

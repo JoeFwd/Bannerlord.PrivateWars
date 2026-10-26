@@ -21,17 +21,20 @@ namespace Bannerlord.PrivateWars.DI
         public static IPrivateWarRepository? PrivateWars { get; private set; }
         public static IPrivateWarHostility? PrivateWarHostility { get; private set; }
         public static IPrivateWarNameplateColorUseCase? PrivateWarNameplateColor { get; private set; }
+        public static IPrivateWarSidesProvider? Sides { get; private set; }
 
         public static bool IsInitialised { get; private set; }
 
         public static void Initialise(
             IPrivateWarRepository privateWars,
             IPrivateWarHostility privateWarHostility,
-            IPrivateWarNameplateColorUseCase privateWarNameplateColor)
+            IPrivateWarNameplateColorUseCase privateWarNameplateColor,
+            IPrivateWarSidesProvider sides)
         {
             PrivateWars = privateWars;
             PrivateWarHostility = privateWarHostility;
             PrivateWarNameplateColor = privateWarNameplateColor;
+            Sides = sides;
             IsInitialised = true;
         }
 
@@ -40,6 +43,7 @@ namespace Bannerlord.PrivateWars.DI
             PrivateWars = null;
             PrivateWarHostility = null;
             PrivateWarNameplateColor = null;
+            Sides = null;
             IsInitialised = false;
         }
     }

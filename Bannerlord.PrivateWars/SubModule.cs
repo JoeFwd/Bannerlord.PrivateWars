@@ -74,9 +74,7 @@ namespace Bannerlord.PrivateWars
             ReplaceVanillaBehaviors(campaignGameStarter);
             PrivateWarEncounterMenuOptions.Register(campaignGameStarter);
 
-            // Private-war siege-retention scoring (drive is explicit; see PrivateWarTargetScoreCalculatingModel)
-            campaignGameStarter.AddModel(_serviceProvider.GetRequiredService<PrivateWarTargetScoreCalculatingModel>());
-            // Keep a private-war enemy out of the belligerent's army candidate pool (design §4.1)
+            // Feud armies call their own side only; realm armies never call a feud enemy (design §4.1)
             campaignGameStarter.AddModel(_serviceProvider.GetRequiredService<PrivateWarArmyManagementCalculationModel>());
             // Block player entry into a same-kingdom private-war rival's town/castle (design §4.1)
             var settlementAccessModel = new PrivateWarSettlementAccessModel(
@@ -88,17 +86,17 @@ namespace Bannerlord.PrivateWars
             campaignGameStarter.AddModel(_serviceProvider.GetRequiredService<PrivateWarVolunteerModel>());
 
             campaignGameStarter.AddBehavior(_serviceProvider.GetRequiredService<PrivateWarCampaignBehavior>());
-
-            // Must follow PrivateWarCampaignBehavior: both listen on OnGameLoadedEvent, and the
-            // claimant sweep needs the war records that behaviour restores there.
-            campaignGameStarter.AddBehavior(new SettlementClaimantDecisionSuppressorCampaignBehavior(
-                _serviceProvider.GetRequiredService<IPrivateWarRepository>()));
+            campaignGameStarter.AddBehavior(_serviceProvider.GetRequiredService<PrivateWarAllegianceCampaignBehavior>());
+            campaignGameStarter.AddBehavior(_serviceProvider.GetRequiredService<PrivateWarBattleScoreCampaignBehavior>());
+            campaignGameStarter.AddBehavior(_serviceProvider.GetRequiredService<PrivateWarSiegeReliefVetoCampaignBehavior>());
+            campaignGameStarter.AddBehavior(_serviceProvider.GetRequiredService<PrivateWarDiagnosticsCampaignBehavior>());
 
             // Populate the static locator read by the patches, game models, and nameplate mixins.
             PrivateWarsServices.Initialise(
                 _serviceProvider.GetRequiredService<IPrivateWarRepository>(),
                 _serviceProvider.GetRequiredService<IPrivateWarHostility>(),
-                _serviceProvider.GetRequiredService<IPrivateWarNameplateColorUseCase>());
+                _serviceProvider.GetRequiredService<IPrivateWarNameplateColorUseCase>(),
+                _serviceProvider.GetRequiredService<IPrivateWarSidesProvider>());
         }
 
         private void ReplaceVanillaBehaviors(CampaignGameStarter starter)
@@ -126,6 +124,10 @@ namespace Bannerlord.PrivateWars
                 starter.RemoveBehavior(vanillaSallyOut);
             starter.AddBehavior(new DadgSallyOutCampaignBehavior(
                 _serviceProvider.GetRequiredService<PrivateWarSallyOutPolicy>()));
+
+            // The king keeps fiefs opened to claim: no post-capture auction.
+            starter.RemoveBehaviors<SettlementClaimantCampaignBehavior>();
+            starter.AddBehavior(new DadgSettlementClaimantCampaignBehavior());
         }
     }
 }

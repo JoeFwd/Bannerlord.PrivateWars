@@ -1,5 +1,6 @@
 using Bannerlord.PrivateWars.Patches;
 using TaleWorlds.CampaignSystem;
+using TaleWorlds.CampaignSystem.Party;
 
 namespace Bannerlord.PrivateWars.Patches
 {
@@ -11,5 +12,8 @@ namespace Bannerlord.PrivateWars.Patches
     {
         public static bool AreEnemies(Clan? a, Clan? b)
             => PrivateWarSiegeDefenderPolicy.AreEnemies(a, b);
+
+        // A settlement party (wall defender) fights for its owner's clan.
+        public static Clan? ClanOf(PartyBase? party) => party?.MobileParty?.ActualClan ?? party?.Settlement?.OwnerClan;
     }
 }

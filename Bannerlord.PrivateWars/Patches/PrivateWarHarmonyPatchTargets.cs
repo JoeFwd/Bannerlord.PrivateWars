@@ -4,6 +4,7 @@ using Helpers;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Actions;
 using TaleWorlds.CampaignSystem.CampaignBehaviors;
+using TaleWorlds.CampaignSystem.CampaignBehaviors.AiBehaviors;
 using TaleWorlds.CampaignSystem.Conversation.Tags;
 using TaleWorlds.CampaignSystem.Encounters;
 using TaleWorlds.CampaignSystem.GameMenus;
@@ -55,6 +56,31 @@ namespace Bannerlord.PrivateWars.Patches
             typeof(void),
             typeof(PartyBase),
             typeof(PartyBase));
+
+        public static MethodInfo StartSettlementEncounter() => ResolveExact(
+            typeof(EncounterManager),
+            nameof(EncounterManager.StartSettlementEncounter),
+            BindingFlags.Static | BindingFlags.Public,
+            typeof(void),
+            typeof(MobileParty),
+            typeof(Settlement));
+
+        public static MethodInfo FactionManagerIsAtWarAgainstFaction() => ResolveExact(
+            typeof(FactionManager),
+            nameof(FactionManager.IsAtWarAgainstFaction),
+            BindingFlags.Static | BindingFlags.Public,
+            typeof(bool),
+            typeof(IFaction),
+            typeof(IFaction));
+
+        public static MethodInfo ApplyBySiege() => ResolveExact(
+            typeof(ChangeOwnerOfSettlementAction),
+            nameof(ChangeOwnerOfSettlementAction.ApplyBySiege),
+            BindingFlags.Static | BindingFlags.Public,
+            typeof(void),
+            typeof(Hero),
+            typeof(Hero),
+            typeof(Settlement));
 
         public static MethodInfo MapEventUpdate() => ResolveExact(
             typeof(MapEvent),
@@ -131,6 +157,67 @@ namespace Bannerlord.PrivateWars.Patches
             typeof(void),
             typeof(Army),
             typeof(Army.ArmyDispersionReason));
+
+        public static MethodInfo FindBestTargetAndItsValueForFaction() => ResolveExact(
+            typeof(AiMilitaryBehavior),
+            nameof(AiMilitaryBehavior.FindBestTargetAndItsValueForFaction),
+            BindingFlags.Instance | BindingFlags.Public,
+            typeof(void),
+            typeof(Army.ArmyTypes),
+            typeof(PartyThinkParams),
+            typeof(float));
+
+        public static MethodInfo CalculateDistanceScoreForBesieging() => ResolveExact(
+            typeof(AiMilitaryBehavior),
+            "CalculateDistanceScoreForBesieging",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(void),
+            typeof(Settlement),
+            typeof(MobileParty),
+            typeof(MobileParty.NavigationType).MakeByRefType(),
+            typeof(float).MakeByRefType(),
+            typeof(bool).MakeByRefType(),
+            typeof(bool).MakeByRefType());
+
+        public static MethodInfo GetFoodScoreForActionType() => ResolveExact(
+            typeof(AiMilitaryBehavior),
+            "GetFoodScoreForActionType",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(float),
+            typeof(PartyThinkParams),
+            typeof(Army.ArmyTypes));
+
+        public static MethodInfo GetPartySizeScore() => ResolveExact(
+            typeof(AiMilitaryBehavior),
+            "GetPartySizeScore",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(float),
+            typeof(MobileParty),
+            typeof(Army.ArmyTypes));
+
+        public static MethodInfo CheckIfSettlementIsSuitableForMilitaryAction() => ResolveExact(
+            typeof(AiMilitaryBehavior),
+            "CheckIfSettlementIsSuitableForMilitaryAction",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(bool),
+            typeof(Settlement),
+            typeof(MobileParty),
+            typeof(Army.ArmyTypes),
+            typeof(bool));
+
+        public static MethodInfo CalculateMilitaryBehaviorForSettlement() => ResolveExact(
+            typeof(AiMilitaryBehavior),
+            "CalculateMilitaryBehaviorForSettlement",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(void),
+            typeof(Settlement),
+            typeof(Army.ArmyTypes),
+            typeof(AiBehavior),
+            typeof(PartyThinkParams),
+            typeof(float),
+            typeof(float),
+            typeof(float),
+            typeof(float));
 
         private static MethodInfo ResolveExact(
             Type declaringType,
