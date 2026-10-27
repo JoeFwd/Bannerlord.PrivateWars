@@ -2,6 +2,7 @@ using System.Linq;
 using Bannerlord.PrivateWars.Domain;
 using Bannerlord.PrivateWars.DI;
 using Bannerlord.PrivateWars.Patches;
+using Microsoft.Extensions.Logging;
 using TaleWorlds.CampaignSystem;
 using TaleWorlds.CampaignSystem.Map;
 using TaleWorlds.CampaignSystem.MapEvents;
@@ -21,10 +22,12 @@ namespace Bannerlord.PrivateWars.Campaign
     public sealed class DadgSallyOutCampaignBehavior : CampaignBehaviorBase
     {
         private readonly PrivateWarSallyOutPolicy _policy;
+        private readonly ILogger<DadgSallyOutCampaignBehavior> _logger;
 
-        public DadgSallyOutCampaignBehavior(PrivateWarSallyOutPolicy policy)
+        public DadgSallyOutCampaignBehavior(PrivateWarSallyOutPolicy policy, ILogger<DadgSallyOutCampaignBehavior> logger)
         {
             _policy = policy;
+            _logger = logger;
         }
 
         public override void RegisterEvents()
@@ -90,13 +93,14 @@ namespace Bannerlord.PrivateWars.Campaign
 
             var besiegerStrength = 0f;
             var nearbySettlementStrength = 0f;
-            var settlementStrength = checkForNavalSallyOut
-                ? settlement.GetInvolvedPartiesForEventType(MapEvent.BattleTypes.BlockadeSallyOutBattle)
-                    .Sum(party => party.GetCustomStrength(
-                        BattleSideEnum.Attacker, MapEvent.PowerCalculationContext.SeaBattle))
-                : settlement.GetInvolvedPartiesForEventType(MapEvent.BattleTypes.SallyOut)
-                    .Sum(party => party.GetCustomStrength(
-                        BattleSideEnum.Attacker, MapEvent.PowerCalculationContext.PlainBattle));
+            var sallyParties = settlement.GetInvolvedPartiesForEventType(checkForNavalSallyOut
+                ? MapEvent.BattleTypes.BlockadeSallyOutBattle
+                : MapEvent.BattleTypes.SallyOut);
+            var sallyContext = checkForNavalSallyOut
+                ? MapEvent.PowerCalculationContext.SeaBattle
+                : MapEvent.PowerCalculationContext.PlainBattle;
+            var settlementStrength = sallyParties.Sum(party => party.GetCustomStrength(BattleSideEnum.Attacker, sallyContext));
+            var sallyMorale = SideMorale(sallyParties, sallyContext);
 
             var ownerClan = settlement.OwnerClan;
             var privateWarSiege = PrivateWarSiegeDefenderPolicy.AreEnemies(
@@ -143,8 +147,12 @@ namespace Bannerlord.PrivateWars.Campaign
             if (!_policy.ShouldSally(
                     settlementStrength + nearbySettlementStrength,
                     besiegerStrength,
-                    siegeOutside || blockade))
+                    siegeOutside || blockade,
+                    sallyMorale))
                 return;
+
+            _logger.LogDebug("[PW] {Settlement} sallies: strength={Strength:0} besieger={Besieger:0} morale={Morale:0.#} naval={Naval}",
+                settlement.StringId, settlementStrength + nearbySettlementStrength, besiegerStrength, sallyMorale, checkForNavalSallyOut);
 
             if (siegeOutside || blockade)
             {
@@ -169,6 +177,22 @@ namespace Bannerlord.PrivateWars.Campaign
             }
 
             salliedOut = true;
+        }
+
+        // MapEventSide.GetSideMorale: strength-weighted morale of the side's mobile parties.
+        // shortcut: counts only the sallying parties, not a relief army already fighting outside.
+        private static float SideMorale(System.Collections.Generic.IEnumerable<PartyBase> parties, MapEvent.PowerCalculationContext context)
+        {
+            float strength = 0f, weighted = 0f;
+            foreach (var party in parties)
+            {
+                if (!party.IsMobile) continue;
+                var partyStrength = party.GetCustomStrength(BattleSideEnum.Attacker, context);
+                strength += partyStrength;
+                weighted += partyStrength * party.MobileParty.Morale;
+            }
+
+            return strength > 0f ? weighted / strength : 0f;
         }
 
         private static bool IsOnSettlementPrivateWarSide(Clan candidate, Clan owner)

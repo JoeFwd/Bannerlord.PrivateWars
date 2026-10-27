@@ -123,7 +123,8 @@ namespace Bannerlord.PrivateWars
             if (vanillaSallyOut != null)
                 starter.RemoveBehavior(vanillaSallyOut);
             starter.AddBehavior(new DadgSallyOutCampaignBehavior(
-                _serviceProvider.GetRequiredService<PrivateWarSallyOutPolicy>()));
+                _serviceProvider.GetRequiredService<PrivateWarSallyOutPolicy>(),
+                _serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<DadgSallyOutCampaignBehavior>>()));
 
             // The king keeps fiefs opened to claim: no post-capture auction.
             starter.RemoveBehaviors<SettlementClaimantCampaignBehavior>();

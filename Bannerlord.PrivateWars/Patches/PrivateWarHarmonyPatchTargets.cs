@@ -88,6 +88,12 @@ namespace Bannerlord.PrivateWars.Patches
             BindingFlags.Instance | BindingFlags.NonPublic,
             typeof(void));
 
+        public static MethodInfo MapEventFinishBattle() => ResolveExact(
+            typeof(MapEvent),
+            "FinishBattle",
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            typeof(void));
+
         public static MethodInfo KingdomIsAtWarWith() => ResolveExact(
             typeof(Kingdom),
             nameof(Kingdom.IsAtWarWith),

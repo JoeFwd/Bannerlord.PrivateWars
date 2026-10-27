@@ -43,7 +43,8 @@ namespace Bannerlord.PrivateWars.Patches
                 (playerEvent.InvolvedParties.Contains(attackerParty) || playerEvent.InvolvedParties.Contains(defenderParty)))
                 return true;
 
-            if (!PrivateWarPatchHelper.AreEnemies(attackerParty.MobileParty?.ActualClan, defenderParty.MobileParty?.ActualClan))
+            // ClanOf, not ActualClan: a sallying garrison has no ActualClan and would fall to the merge.
+            if (!PrivateWarPatchHelper.AreEnemies(PrivateWarPatchHelper.ClanOf(attackerParty), PrivateWarPatchHelper.ClanOf(defenderParty)))
                 return true;
 
             StartBattleAction.Apply(attackerParty, defenderParty);

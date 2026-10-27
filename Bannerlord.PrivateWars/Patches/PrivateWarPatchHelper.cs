@@ -14,6 +14,6 @@ namespace Bannerlord.PrivateWars.Patches
             => PrivateWarSiegeDefenderPolicy.AreEnemies(a, b);
 
         // A settlement party (wall defender) fights for its owner's clan.
-        public static Clan? ClanOf(PartyBase? party) => party?.MobileParty?.ActualClan ?? party?.Settlement?.OwnerClan;
+        public static Clan? ClanOf(PartyBase? party) => Util.PartyClan.OwnerClanOf(party);
     }
 }

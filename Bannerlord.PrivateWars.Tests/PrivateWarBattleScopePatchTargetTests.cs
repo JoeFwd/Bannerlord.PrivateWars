@@ -11,6 +11,10 @@ public class PrivateWarBattleScopePatchTargetTests
         => Assert.NotNull(PrivateWarHarmonyPatchTargets.MapEventUpdate());
 
     [Fact]
+    public void MapEventFinishBattle_Resolves()
+        => Assert.NotNull(PrivateWarHarmonyPatchTargets.MapEventFinishBattle());
+
+    [Fact]
     public void KingdomIsAtWarWith_Resolves()
         => Assert.NotNull(PrivateWarHarmonyPatchTargets.KingdomIsAtWarWith());
 }

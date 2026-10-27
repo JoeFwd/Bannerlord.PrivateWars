@@ -99,6 +99,7 @@ namespace Bannerlord.PrivateWars.DI
             services.AddSingleton<IPatch, StartPartyEncounterBattlePatch>();
             services.AddSingleton<IPatch, MapEventUpdateEnterPrivateWarScopePatch>();
             services.AddSingleton<IPatch, MapEventUpdateExitPrivateWarScopePatch>();
+            services.AddSingleton<IPatch, MapEventFinishBattleExitPrivateWarScopePatch>();
             services.AddSingleton<IPatch, KingdomIsAtWarWithPrivateWarPatch>();
             services.AddSingleton<IPatch, CanPartyJoinBattlePatch>();
             // Real wall assaults for AI besiegers, won fiefs to the war's interim owner

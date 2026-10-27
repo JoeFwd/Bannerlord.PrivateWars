@@ -77,8 +77,8 @@ namespace Bannerlord.PrivateWars.Campaign
                     losingSide.CasualtyStrength + losingSide.RecalculateStrengthOfSide(),
                     partiesNotInBattle);
                 var scored = _applyBattleOutcome.Execute(war, outcome);
-                _logger.LogDebug("[PW] {War} battle won by {Winner}: defeated={Defeated:0} sideTotal={Total:0} battle {Before:0.#} -> {After:0.#}",
-                    war.Id, winnerWarSide, outcome.EnemyForceDefeated, outcome.LosingSideTotalStrength,
+                _logger.LogDebug("[PW] {War} {Type} battle won by {Winner}: defeated={Defeated:0} sideTotal={Total:0} battle {Before:0.#} -> {After:0.#}",
+                    war.Id, mapEvent.EventType, winnerWarSide, outcome.EnemyForceDefeated, outcome.LosingSideTotalStrength,
                     war.BattleScore, scored.BattleScore);
 
                 _privateWars.Update(scored);

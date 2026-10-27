@@ -57,4 +57,20 @@ namespace Bannerlord.PrivateWars.Patches
 
         private static void ExitScope() => PrivateWarBattleScope.Faction = null;
     }
+
+    // Update finishes a won battle inline: FinishBattle -> FinalizeEventAux -> SiegeCompleted -> the capture
+    // and every OnSettlementOwnerChanged handler. Inside the scope those see the kingdom at war with itself,
+    // and PartyDiplomaticHandlerCampaignBehavior evicts the capturer's fresh garrison from its own castle
+    // (a garrison with no CurrentSettlement then NREs in IsGarrisonStarving). Close the scope there.
+    public class MapEventFinishBattleExitPrivateWarScopePatch : IPatch
+    {
+        public MethodInfo TargetMethod => PrivateWarHarmonyPatchTargets.MapEventFinishBattle();
+
+        public MethodInfo? PatchMethod =>
+            AccessTools.Method(typeof(MapEventFinishBattleExitPrivateWarScopePatch), nameof(ExitScope));
+
+        public PatchType PatchType => PatchType.Prefix;
+
+        private static void ExitScope() => PrivateWarBattleScope.Faction = null;
+    }
 }
