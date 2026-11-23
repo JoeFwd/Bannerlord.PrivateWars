@@ -23,14 +23,17 @@ namespace Bannerlord.PrivateWars.UI.Mixins
         private const int BannerlordAllianceRelation = 3;
 
         private readonly PropertyChangedEventHandler _propertyChangedHandler;
+        private readonly PropertyChangedWithIntValueEventHandler _intPropertyChangedHandler;
         private readonly Action _hostilityChangedHandler;
 
         public SettlementNameplatePrivateWarMixin(SettlementNameplateVM vm) : base(vm)
         {
             _propertyChangedHandler = OnBasePropertyChanged;
+            _intPropertyChangedHandler = OnBaseIntPropertyChanged;
             _hostilityChangedHandler = OnPrivateWarHostilityChanged;
 
             vm.PropertyChanged += _propertyChangedHandler;
+            vm.PropertyChangedWithIntValue += _intPropertyChangedHandler;
             if (PrivateWarsServices.IsInitialised && PrivateWarsServices.PrivateWarHostility is not null)
             {
                 PrivateWarsServices.PrivateWarHostility.Changed += _hostilityChangedHandler;
@@ -90,6 +93,7 @@ namespace Bannerlord.PrivateWars.UI.Mixins
             if (ViewModel is not null)
             {
                 ViewModel.PropertyChanged -= _propertyChangedHandler;
+                ViewModel.PropertyChangedWithIntValue -= _intPropertyChangedHandler;
             }
 
             if (PrivateWarsServices.IsInitialised && PrivateWarsServices.PrivateWarHostility is not null)
@@ -100,12 +104,20 @@ namespace Bannerlord.PrivateWars.UI.Mixins
             base.OnFinalize();
         }
 
-        // The base ViewModel raises Relation through the plain PropertyChanged event; the
-        // PropertyChangedWithIntValue overload does not reach this mixin.
         private void OnBasePropertyChanged(object? sender, PropertyChangedEventArgs e)
         {
             if (string.IsNullOrEmpty(e.PropertyName)
                 || e.PropertyName == nameof(SettlementNameplateVM.Relation))
+            {
+                NotifyPrivateWarCapsuleProperties();
+            }
+        }
+
+        // Vanilla raises Relation (an int) only through PropertyChangedWithIntValue, never the
+        // plain PropertyChanged event: without this the capsule keeps the colour it had at bind time.
+        private void OnBaseIntPropertyChanged(object sender, PropertyChangedWithIntValueEventArgs e)
+        {
+            if (e.PropertyName == nameof(SettlementNameplateVM.Relation))
             {
                 NotifyPrivateWarCapsuleProperties();
             }
