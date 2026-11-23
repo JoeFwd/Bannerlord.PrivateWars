@@ -57,7 +57,7 @@ namespace Bannerlord.PrivateWars.Patches
         private static void ScoreFront(AiMilitaryBehavior behaviour, PartyThinkParams p, float ourStrength, PrivateWarFront front)
         {
             var party = p.MobilePartyOf;
-            if (party.Army != null && party.Army.LeaderParty != party || party.Objective == MobileParty.PartyObjective.Defensive) return;
+            if (party.Army != null && party.Army.LeaderParty != party) return;
 
             float cohesion = party.Army is { Cohesion: < 40f } army ? army.Cohesion / 40f : 1f;
             if (cohesion <= 0.25f) return;

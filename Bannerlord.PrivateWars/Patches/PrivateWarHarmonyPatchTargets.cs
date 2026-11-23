@@ -91,7 +91,7 @@ namespace Bannerlord.PrivateWars.Patches
         public static MethodInfo MapEventFinishBattle() => ResolveExact(
             typeof(MapEvent),
             "FinishBattle",
-            BindingFlags.Instance | BindingFlags.NonPublic,
+            BindingFlags.Instance | BindingFlags.Public,
             typeof(void));
 
         public static MethodInfo KingdomIsAtWarWith() => ResolveExact(
